@@ -107,8 +107,13 @@ export default function LoginScreen() {
             </View>
 
             {/* Password */}
-            <View className="mb-8">
-              <Text className="text-slate-600 text-xs font-bold mb-2 ml-1 uppercase tracking-wider">Password</Text>
+            <View className="mb-6">
+              <View className="flex-row items-center justify-between mb-2 ml-1">
+                <Text className="text-slate-600 text-xs font-bold uppercase tracking-wider">Password</Text>
+                <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')}>
+                  <Text className="text-emerald-600 font-semibold text-xs">Forgot Password?</Text>
+                </TouchableOpacity>
+              </View>
               <TextInput
                 placeholder="••••••••"
                 placeholderTextColor="#94a3b8"
