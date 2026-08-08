@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { Audio } from 'expo-av';
 
 const ADHAN_AUDIO_URL = 'https://cdn.aladhan.com/audio/adhan/makkah.mp3';
 
@@ -34,6 +35,7 @@ interface PrayerData {
     Maghrib?: string;
     Isha?: string;
     Sunset?: string;
+    [key: string]: string | undefined;
   };
   iqamahTimes?: {
     Fajr?: string;
@@ -73,6 +75,7 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
   const [reminders, setReminders] = useState<PrayerRemindersState>(DEFAULT_REMINDERS);
   const [isPlayingAdhan, setIsPlayingAdhan] = useState(false);
   const audioRef = useRef<any>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
   // Load Saved Reminder Preferences
   useEffect(() => {
@@ -85,6 +88,12 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
         }
       }
     });
+
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
+    };
   }, []);
 
   // Save Reminder Preferences
@@ -104,7 +113,12 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
   const playAdhanAudio = async () => {
     try {
       if (isPlayingAdhan) {
-        if (audioRef.current) {
+        if (soundRef.current) {
+          await soundRef.current.stopAsync();
+          await soundRef.current.unloadAsync();
+          soundRef.current = null;
+        }
+        if (audioRef.current && Platform.OS === 'web') {
           audioRef.current.pause();
           audioRef.current = null;
         }
@@ -113,17 +127,36 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
       }
 
       setIsPlayingAdhan(true);
+
       if (Platform.OS === 'web') {
         const audio = new window.Audio(ADHAN_AUDIO_URL);
         audioRef.current = audio;
         audio.play();
         audio.onended = () => setIsPlayingAdhan(false);
       } else {
-        // Fallback for native audio preview
-        Alert.alert('Bang Voice Alert', 'Playing Makkah Adhan Bang Voice Reminder!');
-        setTimeout(() => setIsPlayingAdhan(false), 4000);
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+        });
+
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: ADHAN_AUDIO_URL },
+          { shouldPlay: true, volume: 1.0 }
+        );
+
+        soundRef.current = sound;
+
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            setIsPlayingAdhan(false);
+            sound.unloadAsync().catch(() => {});
+            soundRef.current = null;
+          }
+        });
       }
     } catch (err) {
+      console.error('Error playing Adhan audio:', err);
       setIsPlayingAdhan(false);
     }
   };
