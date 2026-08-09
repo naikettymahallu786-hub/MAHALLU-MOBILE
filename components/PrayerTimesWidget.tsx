@@ -114,8 +114,10 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
     try {
       if (isPlayingAdhan) {
         if (soundRef.current) {
-          await soundRef.current.stopAsync();
-          await soundRef.current.unloadAsync();
+          try {
+            await soundRef.current.stopAsync();
+            await soundRef.current.unloadAsync();
+          } catch (_) {}
           soundRef.current = null;
         }
         if (audioRef.current && Platform.OS === 'web') {
@@ -131,33 +133,64 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
       if (Platform.OS === 'web') {
         const audio = new window.Audio(ADHAN_AUDIO_URL);
         audioRef.current = audio;
-        audio.play();
+        audio.play().catch((e) => {
+          console.error('Web audio error:', e);
+          setIsPlayingAdhan(false);
+          Alert.alert('Audio Error', 'Could not play Adhan audio stream.');
+        });
         audio.onended = () => setIsPlayingAdhan(false);
       } else {
         await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
+          allowsRecordingIOS: false,
           staysActiveInBackground: true,
+          playsInSilentModeIOS: true,
           shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
         });
 
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: ADHAN_AUDIO_URL },
-          { shouldPlay: true, volume: 1.0 }
-        );
+        if (soundRef.current) {
+          try {
+            await soundRef.current.unloadAsync();
+          } catch (_) {}
+        }
 
-        soundRef.current = sound;
+        const soundObject = new Audio.Sound();
+        soundRef.current = soundObject;
 
-        sound.setOnPlaybackStatusUpdate((status) => {
+        soundObject.setOnPlaybackStatusUpdate((status) => {
           if (status.isLoaded && status.didJustFinish) {
             setIsPlayingAdhan(false);
-            sound.unloadAsync().catch(() => {});
+            soundObject.unloadAsync().catch(() => {});
             soundRef.current = null;
           }
         });
+
+        // Try primary URL first, fallback to backup URL if streaming fails
+        try {
+          await soundObject.loadAsync(
+            { uri: ADHAN_AUDIO_URL },
+            { shouldPlay: true, volume: 1.0 },
+            false
+          );
+          await soundObject.playAsync();
+        } catch (primaryErr) {
+          console.warn('Primary Adhan URL failed, trying fallback URL...', primaryErr);
+          const fallbackUrl = 'https://media.blessedpromises.com/audio/adhan/makkah.mp3';
+          await soundObject.loadAsync(
+            { uri: fallbackUrl },
+            { shouldPlay: true, volume: 1.0 },
+            false
+          );
+          await soundObject.playAsync();
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error playing Adhan audio:', err);
       setIsPlayingAdhan(false);
+      Alert.alert(
+        'Adhan Voice',
+        'Could not stream Adhan audio. Please check your internet connection or volume settings.'
+      );
     }
   };
 
