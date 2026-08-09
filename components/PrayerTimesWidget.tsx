@@ -136,7 +136,7 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
         audio.play().catch((e) => {
           console.error('Web audio error:', e);
           setIsPlayingAdhan(false);
-          Alert.alert('Audio Error', 'Could not play Adhan audio stream.');
+          Alert.alert('Audio Error', 'Could not play Adhan audio.');
         });
         audio.onended = () => setIsPlayingAdhan(false);
       } else {
@@ -154,35 +154,22 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
           } catch (_) {}
         }
 
-        const soundObject = new Audio.Sound();
-        soundRef.current = soundObject;
+        // Play bundled local Adhan asset (100% offline & instant playback)
+        const adhanLocalAsset = require('../assets/audio/adhan.mp3');
+        const { sound } = await Audio.Sound.createAsync(
+          adhanLocalAsset,
+          { shouldPlay: true, volume: 1.0 }
+        );
 
-        soundObject.setOnPlaybackStatusUpdate((status) => {
+        soundRef.current = sound;
+
+        sound.setOnPlaybackStatusUpdate((status) => {
           if (status.isLoaded && status.didJustFinish) {
             setIsPlayingAdhan(false);
-            soundObject.unloadAsync().catch(() => {});
+            sound.unloadAsync().catch(() => {});
             soundRef.current = null;
           }
         });
-
-        // Try primary URL first, fallback to backup URL if streaming fails
-        try {
-          await soundObject.loadAsync(
-            { uri: ADHAN_AUDIO_URL },
-            { shouldPlay: true, volume: 1.0 },
-            false
-          );
-          await soundObject.playAsync();
-        } catch (primaryErr) {
-          console.warn('Primary Adhan URL failed, trying fallback URL...', primaryErr);
-          const fallbackUrl = 'https://media.blessedpromises.com/audio/adhan/makkah.mp3';
-          await soundObject.loadAsync(
-            { uri: fallbackUrl },
-            { shouldPlay: true, volume: 1.0 },
-            false
-          );
-          await soundObject.playAsync();
-        }
       }
     } catch (err: any) {
       console.error('Error playing Adhan audio:', err);
