@@ -5,8 +5,12 @@ import dayjs from 'dayjs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
+import { Asset } from 'expo-asset';
 
-const ADHAN_AUDIO_URL = 'https://cdn.aladhan.com/audio/adhan/makkah.mp3';
+const ADHAN_AUDIO_URLS = [
+  'https://mahallu-4d9t.onrender.com/adhan.mp3',
+  'https://raw.githubusercontent.com/abodehq/Athan-MP3/master/Athan.mp3',
+];
 
 export type ReminderMode = 'voice' | 'silent' | 'off';
 
@@ -131,7 +135,7 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
       setIsPlayingAdhan(true);
 
       if (Platform.OS === 'web') {
-        const audio = new window.Audio(ADHAN_AUDIO_URL);
+        const audio = new window.Audio(ADHAN_AUDIO_URLS[0]);
         audioRef.current = audio;
         audio.play().catch((e) => {
           console.error('Web audio error:', e);
@@ -158,22 +162,38 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
 
         let soundObject: Audio.Sound | null = null;
 
-        // Try local asset first
+        // Strategy 1: Asset.fromModule with localUri / uri
         try {
-          const adhanLocalAsset = require('../assets/audio/adhan.mp3');
-          const result = await Audio.Sound.createAsync(
-            adhanLocalAsset,
-            { shouldPlay: true, volume: 1.0 }
-          );
-          soundObject = result.sound;
-        } catch (localErr: any) {
-          console.warn('Local asset load failed, trying remote URL fallback...', localErr);
-          // Fallback to remote streaming URL
-          const result = await Audio.Sound.createAsync(
-            { uri: ADHAN_AUDIO_URL },
-            { shouldPlay: true, volume: 1.0 }
-          );
-          soundObject = result.sound;
+          const adhanAsset = Asset.fromModule(require('../assets/audio/adhan.mp3'));
+          if (!adhanAsset.localUri && !adhanAsset.uri) {
+            await adhanAsset.downloadAsync();
+          }
+          const targetUri = adhanAsset.localUri || adhanAsset.uri;
+          if (targetUri) {
+            const result = await Audio.Sound.createAsync(
+              { uri: targetUri },
+              { shouldPlay: true, volume: 1.0 }
+            );
+            soundObject = result.sound;
+          }
+        } catch (assetErr) {
+          console.warn('[Adhan] Asset load failed, attempting fallback URL streams...', assetErr);
+        }
+
+        // Strategy 2: Fallback to Backend URL / Reliable Streams
+        if (!soundObject) {
+          for (const streamUrl of ADHAN_AUDIO_URLS) {
+            try {
+              const result = await Audio.Sound.createAsync(
+                { uri: streamUrl },
+                { shouldPlay: true, volume: 1.0 }
+              );
+              soundObject = result.sound;
+              break;
+            } catch (streamErr) {
+              console.warn(`[Adhan] Stream ${streamUrl} failed:`, streamErr);
+            }
+          }
         }
 
         if (soundObject) {
@@ -185,6 +205,8 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
               soundRef.current = null;
             }
           });
+        } else {
+          throw new Error('All audio sources (local asset and remote streams) were unavailable.');
         }
       }
     } catch (err: any) {
