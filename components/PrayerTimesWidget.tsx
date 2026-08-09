@@ -162,9 +162,9 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
 
         let soundObject: Audio.Sound | null = null;
 
-        // Strategy 1: Asset.fromModule with localUri / uri
+        // Strategy 1: Asset.fromModule with localUri / uri for azan3.mp3
         try {
-          const adhanAsset = Asset.fromModule(require('../assets/audio/adhan.mp3'));
+          const adhanAsset = Asset.fromModule(require('../assets/audio/azan3.mp3'));
           if (!adhanAsset.localUri && !adhanAsset.uri) {
             await adhanAsset.downloadAsync();
           }
