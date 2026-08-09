@@ -19,6 +19,11 @@ if (workspaceRoot !== projectRoot && fs.existsSync(workspaceRoot)) {
   config.watchFolders = [workspaceRoot];
 }
 
+// Ensure audio extensions are in assetExts
+if (!config.resolver.assetExts.includes('mp3')) {
+  config.resolver.assetExts.push('mp3', 'wav', 'm4a', 'aac');
+}
+
 // Map shared package names to local package directories inside apps/mobile/packages
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,

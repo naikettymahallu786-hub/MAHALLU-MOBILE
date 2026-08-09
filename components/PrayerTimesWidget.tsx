@@ -150,33 +150,50 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
 
         if (soundRef.current) {
           try {
+            await soundRef.current.stopAsync();
             await soundRef.current.unloadAsync();
           } catch (_) {}
+          soundRef.current = null;
         }
 
-        // Play bundled local Adhan asset (100% offline & instant playback)
-        const adhanLocalAsset = require('../assets/audio/adhan.mp3');
-        const { sound } = await Audio.Sound.createAsync(
-          adhanLocalAsset,
-          { shouldPlay: true, volume: 1.0 }
-        );
+        let soundObject: Audio.Sound | null = null;
 
-        soundRef.current = sound;
+        // Try local asset first
+        try {
+          const adhanLocalAsset = require('../assets/audio/adhan.mp3');
+          const result = await Audio.Sound.createAsync(
+            adhanLocalAsset,
+            { shouldPlay: true, volume: 1.0 }
+          );
+          soundObject = result.sound;
+        } catch (localErr: any) {
+          console.warn('Local asset load failed, trying remote URL fallback...', localErr);
+          // Fallback to remote streaming URL
+          const result = await Audio.Sound.createAsync(
+            { uri: ADHAN_AUDIO_URL },
+            { shouldPlay: true, volume: 1.0 }
+          );
+          soundObject = result.sound;
+        }
 
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            setIsPlayingAdhan(false);
-            sound.unloadAsync().catch(() => {});
-            soundRef.current = null;
-          }
-        });
+        if (soundObject) {
+          soundRef.current = soundObject;
+          soundObject.setOnPlaybackStatusUpdate((status) => {
+            if (status.isLoaded && status.didJustFinish) {
+              setIsPlayingAdhan(false);
+              soundObject?.unloadAsync().catch(() => {});
+              soundRef.current = null;
+            }
+          });
+        }
       }
     } catch (err: any) {
       console.error('Error playing Adhan audio:', err);
       setIsPlayingAdhan(false);
+      const errMsg = err?.message || String(err);
       Alert.alert(
-        'Adhan Voice',
-        'Could not stream Adhan audio. Please check your internet connection or volume settings.'
+        'Adhan Voice Error',
+        `Could not play Adhan audio: ${errMsg}\n\nPlease check your volume settings.`
       );
     }
   };
