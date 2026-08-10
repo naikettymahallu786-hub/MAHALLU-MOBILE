@@ -24,11 +24,19 @@ export function EventCard({ title, date, venue, bannerUri, isPaid, onPress }: Ev
     >
       {/* Banner */}
       {bannerUri ? (
-        <Image 
-          source={{ uri: bannerUri }} 
-          className="w-full h-36 bg-slate-100"
-          resizeMode="cover"
-        />
+        <View className="w-full h-44 bg-slate-950 relative overflow-hidden items-center justify-center">
+          <Image 
+            source={{ uri: bannerUri }} 
+            className="absolute inset-0 w-full h-full opacity-35"
+            blurRadius={20}
+            resizeMode="cover"
+          />
+          <Image 
+            source={{ uri: bannerUri }} 
+            className="w-full h-full"
+            resizeMode="contain"
+          />
+        </View>
       ) : (
         <View className="w-full h-24 bg-emerald-50 items-center justify-center">
           <Ionicons name="calendar-outline" size={32} color="#0F6B5C" style={{ opacity: 0.5 }} />

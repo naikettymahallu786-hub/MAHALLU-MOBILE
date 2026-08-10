@@ -15,6 +15,45 @@ const TEAL = '#0F6B5C';
 const CREAM = '#FBF8F2';
 const GOLD = '#C9972E';
 
+function renderFormattedDescription(description?: string, eventTitle?: string, eventDate?: string, chiefGuest?: string) {
+  if (!description) return <Text className="text-slate-500 italic">No description provided.</Text>;
+
+  let text = description;
+  text = text.replace(/\{\{MAJLIS_TITLE\}\}/g, eventTitle || '');
+  text = text.replace(/\{\{EVENT_TITLE\}\}/g, eventTitle || '');
+  text = text.replace(/\{\{CHIEF_GUEST\}\}/g, chiefGuest || 'മഹല്ല് ഖതീബ് / ഭാരവാഹികൾ');
+  text = text.replace(/\{\{TIME_SLOT\}\}/g, eventDate ? dayjs(eventDate).format('hh:mm A') : '');
+  text = text.replace(/\{\{[^}]+\}\}/g, '').trim();
+
+  const lines = text.split('\n');
+
+  return (
+    <View className="space-y-2">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) return null;
+
+        const parts = trimmed.split(/(\*\*[^*]+\*\*)/g);
+
+        return (
+          <Text key={idx} className="text-slate-700 text-sm leading-6">
+            {parts.map((part, pIdx) => {
+              if (part.startsWith('**') && part.endsWith('**')) {
+                return (
+                  <Text key={pIdx} className="font-extrabold text-slate-900">
+                    {part.slice(2, -2)}
+                  </Text>
+                );
+              }
+              return part;
+            })}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
@@ -75,23 +114,35 @@ export default function EventDetailScreen() {
   return (
     <View className="flex-1" style={{ backgroundColor: CREAM }}>
       <ScrollView className="flex-1" bounces={false} showsVerticalScrollIndicator={false}>
-        {/* Banner Image */}
-        <View className="w-full h-72 bg-slate-100 relative">
+        {/* Banner Image Container */}
+        <View className="w-full bg-slate-950 relative items-center justify-center overflow-hidden" style={{ minHeight: 280, maxHeight: 360 }}>
           {data.banner?.url ? (
-            <Image source={{ uri: data.banner.url }} className="w-full h-full" resizeMode="cover" />
+            <>
+              <Image 
+                source={{ uri: data.banner.url }} 
+                className="absolute inset-0 w-full h-full opacity-35" 
+                blurRadius={25}
+                resizeMode="cover" 
+              />
+              <Image 
+                source={{ uri: data.banner.url }} 
+                className="w-full h-72" 
+                resizeMode="contain" 
+              />
+            </>
           ) : (
-            <View className="w-full h-full bg-emerald-50 items-center justify-center">
-              <Ionicons name="calendar" size={64} color="#0F6B5C" style={{ opacity: 0.2 }} />
+            <View className="w-full h-64 bg-emerald-950 items-center justify-center">
+              <Ionicons name="calendar" size={64} color="#34d399" style={{ opacity: 0.4 }} />
             </View>
           )}
           
           {/* Back Button Overlay */}
           <TouchableOpacity 
-            className="absolute left-5 w-10 h-10 rounded-full bg-white/90 items-center justify-center shadow-sm"
-            style={{ top: Math.max(insets.top, 10), shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 }}
+            className="absolute left-5 w-10 h-10 rounded-full bg-black/40 items-center justify-center z-10"
+            style={{ top: Math.max(insets.top, 12) }}
             onPress={() => router.back()}
           >
-            <Ionicons name="arrow-back" size={24} color={TEAL_DARK} />
+            <Ionicons name="arrow-back" size={22} color="#ffffff" />
           </TouchableOpacity>
         </View>
 
@@ -129,11 +180,11 @@ export default function EventDetailScreen() {
           </View>
 
           <Text className="text-slate-900 text-lg font-extrabold mb-3">About Event</Text>
-          <Text className="text-slate-600 leading-relaxed mb-8">
-            {data.description || "No description provided."}
-          </Text>
+          <View className="mb-8">
+            {renderFormattedDescription(data.description, data.title, data.date, data.chiefGuest)}
+          </View>
         </View>
-      </ScrollView>
+      </ScrollView>iew>
 
       {/* Registration Bottom Bar */}
       <View 
