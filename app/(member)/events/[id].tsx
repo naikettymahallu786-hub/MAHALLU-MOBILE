@@ -21,8 +21,16 @@ function renderFormattedDescription(description?: string, eventTitle?: string, e
   let text = description;
   text = text.replace(/\{\{MAJLIS_TITLE\}\}/g, eventTitle || '');
   text = text.replace(/\{\{EVENT_TITLE\}\}/g, eventTitle || '');
+  text = text.replace(/\{\{ANNIVERSARY_TITLE\}\}/g, eventTitle || '');
+  text = text.replace(/\{\{UROOS_NUMBER\}\}/g, 'ഉറൂസ് മുബാറക്');
+  text = text.replace(/\{\{VENUE_NAME\}\}/g, 'മഹല്ല് ജുമാ മസ്ജിദ് അങ്കണം');
+  text = text.replace(/\{\{TIME_SLOT\}\}/g, eventDate ? dayjs(eventDate).format('hh:mm A') : 'മഗ്‌രിബ് നമസ്കാരാനന്തരം');
   text = text.replace(/\{\{CHIEF_GUEST\}\}/g, chiefGuest || 'മഹല്ല് ഖതീബ് / ഭാരവാഹികൾ');
-  text = text.replace(/\{\{TIME_SLOT\}\}/g, eventDate ? dayjs(eventDate).format('hh:mm A') : '');
+  text = text.replace(/\{\{KEYNOTE_SPEAKER_DAY1\}\}/g, 'മുഖ്യ പ്രഭാഷകർ');
+  text = text.replace(/\{\{CHIEF_GUEST_DAY2\}\}/g, 'സയ്യിദ് ബാഫഖി തങ്ങൾ');
+  text = text.replace(/\{\{GUEST_SINGER\}\}/g, 'ഇസ്ലാമിക് ഗായകർ');
+  text = text.replace(/\{\{CONVENER_NAME\}\}/g, 'കൺവീനർ');
+  text = text.replace(/\{\{DATES_RANGE\}\}/g, eventDate ? dayjs(eventDate).format('DD/MM/YYYY') : '');
   text = text.replace(/\{\{[^}]+\}\}/g, '').trim();
 
   const lines = text.split('\n');
@@ -45,7 +53,7 @@ function renderFormattedDescription(description?: string, eventTitle?: string, e
                   </Text>
                 );
               }
-              return part;
+              return part.replace(/\*\*/g, '');
             })}
           </Text>
         );
