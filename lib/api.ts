@@ -33,7 +33,7 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error),
 );
 
-// Response interceptor — handle 401, refresh token
+// Response interceptor — refresh token silently without auto-logout
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -52,7 +52,7 @@ apiClient.interceptors.response.use(
           return apiClient(originalRequest);
         }
       } catch {
-        useAuthStore.getState().logout();
+        // Retain current session; user will only be logged out when explicitly tapping Logout
       }
     }
     return Promise.reject(error);
