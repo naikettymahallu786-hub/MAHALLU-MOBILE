@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 import { useAuthStore } from '../store/auth.store';
-import { UserRole } from '@mahallu/shared-types';
+import { UserRole } from '../lib/types';
 
 export default function Index() {
   const { isAuthenticated, user } = useAuthStore();
