@@ -16,7 +16,6 @@ export default function RegisterFormScreen() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({
-    mahalluCode: '',
     name: '',
     phone: '',
     email: '',
@@ -30,17 +29,13 @@ export default function RegisterFormScreen() {
   const [fetchingFamilies, setFetchingFamilies] = useState(false);
 
   const fetchFamilies = async () => {
-    if (!form.mahalluCode) {
-      Alert.alert('Error', 'Please enter a Mahallu Code first');
-      return;
-    }
     try {
       setFetchingFamilies(true);
-      const res = await api.get(`/registrations/families/${form.mahalluCode}`);
+      const res = await api.get('/registrations/families');
       setFamilies(res.data.data || []);
       setShowFamilyModal(true);
     } catch (error) {
-      Alert.alert('Error', 'Failed to fetch families. Please check your Mahallu Code.');
+      Alert.alert('Error', 'Failed to fetch families.');
     } finally {
       setFetchingFamilies(false);
     }
@@ -65,19 +60,14 @@ export default function RegisterFormScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!form.mahalluCode || !form.name || !form.phone) {
-      Alert.alert('Error', 'Please fill in all required fields (Mahallu Code, Name, Phone).');
+    if (!form.name || !form.phone) {
+      Alert.alert('Error', 'Please fill in all required fields (Name, Phone).');
       return;
     }
 
     try {
       setLoading(true);
-      // Since it's public, we might not need to be authenticated, but our api instance might attach headers.
-      // Assuming the backend has `/api/v1/auth/submit` mapped to the controller. Wait, the route is `/api/v1/auth/register/submit`? 
-      // Actually, I mounted it as app.use('/api/v1/registrations', registrationRoutes) and router.post('/submit')
-      // So the endpoint is `/registrations/submit`
       await api.post('/registrations/submit', {
-        mahalluCode: form.mahalluCode,
         type: role,
         payload: { ...form, familyMembers }
       });
@@ -125,18 +115,6 @@ export default function RegisterFormScreen() {
       <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 40 }}>
         <View style={{ gap: 20 }}>
           
-          <View>
-            <Text style={{ color: '#475569', marginBottom: 8, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Mahallu Code *</Text>
-            <TextInput
-              style={{ backgroundColor: 'white', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 16, padding: 18, color: '#0f172a', fontSize: 16, shadowColor: '#94a3b8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 }}
-              placeholder="e.g. JMM001"
-              placeholderTextColor="#94a3b8"
-              autoCapitalize="characters"
-              value={form.mahalluCode}
-              onChangeText={val => updateForm('mahalluCode', val)}
-            />
-          </View>
-
           <View>
             <Text style={{ color: '#475569', marginBottom: 8, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Full Name *</Text>
             <TextInput

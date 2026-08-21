@@ -1,7 +1,9 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Image } from 'react-native';
+import { View, Text, TouchableOpacity, Image, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import dayjs from 'dayjs';
+import { colors, shadows, radius } from '../lib/theme';
 
 interface EventCardProps {
   title: string;
@@ -14,69 +16,215 @@ interface EventCardProps {
 
 export function EventCard({ title, date, venue, bannerUri, isPaid, onPress }: EventCardProps) {
   const eventDate = dayjs(date);
-  
+
   return (
-    <TouchableOpacity 
-      activeOpacity={0.8}
+    <TouchableOpacity
+      activeOpacity={0.85}
       onPress={onPress}
-      className="bg-white rounded-[24px] overflow-hidden mb-4"
-      style={{ shadowColor: '#0f172a', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 3 }}
+      style={styles.container}
     >
       {/* Banner */}
       {bannerUri ? (
-        <View className="w-full h-44 bg-slate-950 relative overflow-hidden items-center justify-center">
-          <Image 
-            source={{ uri: bannerUri }} 
-            className="absolute inset-0 w-full h-full opacity-35"
+        <View style={styles.bannerContainer}>
+          <Image
+            source={{ uri: bannerUri }}
+            style={styles.bannerBg}
             blurRadius={20}
             resizeMode="cover"
           />
-          <Image 
-            source={{ uri: bannerUri }} 
-            className="w-full h-full"
+          <Image
+            source={{ uri: bannerUri }}
+            style={styles.bannerMain}
             resizeMode="contain"
           />
+          {/* Gradient overlay for depth */}
+          <LinearGradient
+            colors={['transparent', 'rgba(6,46,40,0.5)']}
+            style={styles.bannerOverlay}
+          />
+          {/* Floating date badge */}
+          <View style={styles.dateBadge}>
+            <Text style={styles.dateBadgeMonth}>{eventDate.format('MMM')}</Text>
+            <Text style={styles.dateBadgeDay}>{eventDate.format('DD')}</Text>
+          </View>
         </View>
       ) : (
-        <View className="w-full h-24 bg-emerald-50 items-center justify-center">
-          <Ionicons name="calendar-outline" size={32} color="#0F6B5C" style={{ opacity: 0.5 }} />
+        <View style={styles.placeholderBanner}>
+          <LinearGradient
+            colors={[colors.teal.lighter, colors.teal.ghost]}
+            style={styles.placeholderGradient}
+          >
+            <View style={styles.placeholderIconRing}>
+              <Ionicons name="calendar" size={28} color={colors.teal.base} />
+            </View>
+          </LinearGradient>
+          {/* Date badge for placeholder too */}
+          <View style={[styles.dateBadge, { bottom: 8, left: 8 }]}>
+            <Text style={styles.dateBadgeMonth}>{eventDate.format('MMM')}</Text>
+            <Text style={styles.dateBadgeDay}>{eventDate.format('DD')}</Text>
+          </View>
         </View>
       )}
 
       {/* Content */}
-      <View className="p-4 flex-row">
-        {/* Date block */}
-        <View className="bg-emerald-50 rounded-[16px] w-14 h-16 items-center justify-center mr-4">
-          <Text className="text-emerald-700 text-xs font-extrabold uppercase">{eventDate.format('MMM')}</Text>
-          <Text className="text-emerald-600 text-xl font-extrabold -mt-1">{eventDate.format('DD')}</Text>
+      <View style={styles.content}>
+        <View style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={2}>
+            {title}
+          </Text>
+          {isPaid && (
+            <View style={styles.paidBadge}>
+              <Text style={styles.paidText}>PAID</Text>
+            </View>
+          )}
         </View>
 
-        {/* Info */}
-        <View className="flex-1 justify-center">
-          <View className="flex-row items-start justify-between">
-            <Text className="text-slate-900 font-extrabold text-base flex-1 mr-2" numberOfLines={2}>
-              {title}
-            </Text>
-            {isPaid && (
-              <View className="bg-amber-100 px-2 py-0.5 rounded flex-shrink-0">
-                <Text className="text-amber-600 text-[10px] font-bold">PAID</Text>
-              </View>
-            )}
-          </View>
-          
-          <View className="flex-row items-center mt-2">
-            <Ionicons name="time-outline" size={14} color="#94A3B8" />
-            <Text className="text-slate-500 font-medium text-xs ml-1 mr-3">{eventDate.format('hh:mm A')}</Text>
-            
-            {venue && (
-              <>
-                <Ionicons name="location-outline" size={14} color="#94A3B8" />
-                <Text className="text-slate-500 font-medium text-xs ml-1 flex-1" numberOfLines={1}>{venue}</Text>
-              </>
-            )}
-          </View>
+        <View style={styles.metaRow}>
+          <Ionicons name="time-outline" size={13} color={colors.slate[400]} />
+          <Text style={styles.metaText}>{eventDate.format('hh:mm A')}</Text>
+
+          {venue && (
+            <>
+              <View style={styles.metaDot} />
+              <Ionicons name="location-outline" size={13} color={colors.slate[400]} />
+              <Text style={[styles.metaText, { flex: 1 }]} numberOfLines={1}>
+                {venue}
+              </Text>
+            </>
+          )}
         </View>
       </View>
     </TouchableOpacity>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: colors.white,
+    borderRadius: radius.xl,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: `${colors.teal.dark}06`,
+    ...shadows.elevated,
+  },
+  bannerContainer: {
+    width: '100%',
+    height: 180,
+    backgroundColor: colors.slate[900],
+    position: 'relative',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerBg: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    opacity: 0.35,
+  },
+  bannerMain: {
+    width: '100%',
+    height: '100%',
+  },
+  bannerOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 80,
+  },
+  dateBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    backgroundColor: colors.white,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  dateBadgeMonth: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.teal.base,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  dateBadgeDay: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.teal.dark,
+    marginTop: -2,
+  },
+  placeholderBanner: {
+    width: '100%',
+    height: 100,
+    position: 'relative',
+  },
+  placeholderGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderIconRing: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: `${colors.teal.base}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: {
+    padding: 16,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  title: {
+    color: colors.slate[900],
+    fontWeight: '800',
+    fontSize: 15,
+    flex: 1,
+    marginRight: 8,
+    lineHeight: 21,
+  },
+  paidBadge: {
+    backgroundColor: colors.gold.lighter,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  paidText: {
+    color: colors.gold.dark,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  metaText: {
+    color: colors.slate[500],
+    fontWeight: '600',
+    fontSize: 12,
+    marginLeft: 4,
+    marginRight: 8,
+  },
+  metaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: colors.slate[300],
+    marginRight: 8,
+  },
+});

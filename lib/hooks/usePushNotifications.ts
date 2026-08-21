@@ -1,48 +1,18 @@
 import { useEffect } from 'react';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '../../store/auth.store';
 import { io } from 'socket.io-client';
 import { baseOrigin } from '../api';
-
-const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+import { initializeNotificationChannels } from '../services/prayerNotificationService';
 
 export function usePushNotifications() {
   const { user, isAuthenticated } = useAuthStore();
 
   useEffect(() => {
-    if (isExpoGo || !isAuthenticated || !user) return;
+    // 1. Initialize native notification channels and permissions
+    initializeNotificationChannels();
 
-    let Notifications: typeof import('expo-notifications') | null = null;
-    try {
-      Notifications = require('expo-notifications');
-      if (Notifications && Notifications.setNotificationHandler) {
-        Notifications.setNotificationHandler({
-          handleNotification: async () => ({
-            shouldShowAlert: true,
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-            shouldShowBanner: true,
-            shouldShowList: true,
-          }),
-        });
-      }
-    } catch (e) {
-      // Ignore if notifications module cannot be initialized natively
-    }
-
-    if (Notifications) {
-      try {
-        Notifications.getPermissionsAsync()
-          .then(({ status: existingStatus }) => {
-            if (existingStatus !== 'granted') {
-              Notifications?.requestPermissionsAsync();
-            }
-          })
-          .catch(() => {});
-      } catch (e) {
-        // Ignore permission errors
-      }
-    }
+    if (!isAuthenticated || !user) return;
 
     // 2. Connect to real-time Socket.io server
     const socket = io(baseOrigin, {

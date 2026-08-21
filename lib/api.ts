@@ -2,15 +2,29 @@ import axios, { InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/auth.store';
 import Constants from 'expo-constants';
 
-const DEFAULT_API_URL = 'https://mahallu-4d9t.onrender.com/api/v1';
+const DEFAULT_API_URL = 'http://192.168.1.2:5000/api/v1';
 
-let rawUrl = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl || DEFAULT_API_URL;
+const getBaseUrl = (): string => {
+  // If running in Expo Go on physical device, auto-extract computer IP from bundler hostUri
+  const hostUri = Constants.expoConfig?.hostUri 
+    || (Constants as any).manifest2?.extra?.expoGo?.debuggerHost
+    || (Constants as any).manifest?.debuggerHost;
 
-if (!rawUrl || !rawUrl.startsWith('http')) {
-  rawUrl = DEFAULT_API_URL;
-}
+  const hostIp = hostUri ? hostUri.split(':')[0] : null;
 
-export const baseURL = rawUrl;
+  if (hostIp && hostIp !== 'localhost' && hostIp !== '127.0.0.1') {
+    return `http://${hostIp}:5000/api/v1`;
+  }
+
+  let envUrl = process.env.EXPO_PUBLIC_API_URL || Constants.expoConfig?.extra?.apiUrl;
+  if (envUrl && envUrl.startsWith('http') && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+    return envUrl;
+  }
+
+  return DEFAULT_API_URL;
+};
+
+export const baseURL = getBaseUrl();
 export const baseOrigin = baseURL.replace(/\/api\/v1\/?$/, '');
 
 export const apiClient = axios.create({
