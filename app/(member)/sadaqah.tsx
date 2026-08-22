@@ -153,8 +153,8 @@ export default function SadaqahScreen() {
           <Ionicons name="arrow-back" size={24} color="#0f172a" />
         </TouchableOpacity>
         <View className="items-center">
-          <Text className="text-slate-900 text-lg font-extrabold">Give Sadaqah (സ്വദഖ)</Text>
-          <Text className="text-slate-500 text-xs font-semibold">Voluntary Charity & Relief Fund</Text>
+          <Text className="text-slate-900 text-lg font-extrabold">{t('sadaqahTitle', language)}</Text>
+          <Text className="text-slate-500 text-xs font-semibold">{t('voluntaryCharity', language)}</Text>
         </View>
         <View className="w-8" />
       </View>
@@ -167,18 +167,18 @@ export default function SadaqahScreen() {
               <Ionicons name="heart" size={18} color="#ffffff" />
             </View>
             <Text className="text-emerald-100 text-xs font-bold uppercase tracking-wider">
-              Noble Deed • പുണ്യം നിറഞ്ഞ ദാനം
+              {t('nobleDeed', language)}
             </Text>
           </View>
-          <Text className="text-white text-xl font-extrabold">Sadaqah Wipes Away Sins</Text>
+          <Text className="text-white text-xl font-extrabold">{t('sadaqahHadithTitle', language)}</Text>
           <Text className="text-emerald-100 text-xs mt-1 leading-relaxed">
-            "Charity does not decrease wealth." Your voluntary contribution directly supports Mahallu families in need.
+            {t('sadaqahHadithDesc', language)}
           </Text>
         </View>
 
         {/* Amount Selector */}
         <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">Select Sadaqah Amount (₹)</Text>
+          <Text className="text-slate-900 font-bold text-sm mb-3">{t('selectAmount', language)}</Text>
           <View className="flex-row flex-wrap gap-2.5 mb-4">
             {PRESET_AMOUNTS.map((amt) => {
               const isSelected = selectedAmount === amt && !customAmount;
@@ -204,7 +204,7 @@ export default function SadaqahScreen() {
           </View>
 
           {/* Custom Amount Input */}
-          <Text className="text-slate-500 font-semibold text-xs mb-1.5">Or Enter Custom Amount (₹)</Text>
+          <Text className="text-slate-500 font-semibold text-xs mb-1.5">{t('customAmount', language)}</Text>
           <View className="flex-row items-center border border-slate-200 rounded-2xl px-4 py-3 bg-slate-50">
             <Text className="text-slate-500 font-bold text-base mr-2">₹</Text>
             <TextInput
@@ -222,7 +222,7 @@ export default function SadaqahScreen() {
 
         {/* Category Selector */}
         <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">Sadaqah Category / Purpose</Text>
+          <Text className="text-slate-900 font-bold text-sm mb-3">{t('selectCategory', language)}</Text>
           <View className="gap-2">
             {SADAQAH_CATEGORIES.map((cat) => {
               const isSelected = category === cat.id;
@@ -261,9 +261,9 @@ export default function SadaqahScreen() {
 
         {/* Description / Notes */}
         <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-2">Optional Note / Intent</Text>
+          <Text className="text-slate-900 font-bold text-sm mb-2">{t('optionalNote', language)}</Text>
           <TextInput
-            placeholder="e.g. For family wellbeing / Esaal-e-Sawab..."
+            placeholder={language === 'en' ? 'e.g. For family wellbeing / Esaal-e-Sawab...' : 'ഉദാഹരണത്തിന്: കുടുംബത്തിന് വേണ്ടി / ഈസാൽ-എ-സവാബ്...'}
             value={description}
             onChangeText={setDescription}
             className="border border-slate-200 rounded-2xl px-4 py-3 text-sm bg-slate-50 text-slate-900"
@@ -273,11 +273,11 @@ export default function SadaqahScreen() {
 
         {/* Payment Method */}
         <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-6 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">Payment Method</Text>
+          <Text className="text-slate-900 font-bold text-sm mb-3">{t('paymentMethod', language)}</Text>
           <View className="flex-row gap-3">
             {[
-              { id: 'razorpay', label: 'Online (UPI / Cards / NetBank)', icon: 'qr-code-outline' },
-              { id: 'cash', label: 'Cash in Hand', icon: 'cash-outline' },
+              { id: 'razorpay', label: t('onlinePayment', language), icon: 'qr-code-outline' },
+              { id: 'cash', label: t('cashInHand', language), icon: 'cash-outline' },
             ].map((m) => {
               const isSelected = gateway === m.id;
               return (
@@ -313,7 +313,7 @@ export default function SadaqahScreen() {
             <>
               <Ionicons name="card-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text className="text-white text-base font-extrabold">
-                {gateway === 'razorpay' ? 'Proceed to Razorpay ₹' : 'Pay Cash ₹'}{finalAmount || 0}
+                {gateway === 'razorpay' ? `${t('proceedToRazorpay', language)}: ₹` : `${t('payCash', language)}: ₹`}{finalAmount || 0}
               </Text>
             </>
           )}
@@ -321,13 +321,13 @@ export default function SadaqahScreen() {
 
         {/* History Section */}
         <View className="mb-12">
-          <Text className="text-slate-900 font-extrabold text-base mb-3">My Past Sadaqah Contributions</Text>
+          <Text className="text-slate-900 font-extrabold text-base mb-3">{t('pastSadaqah', language)}</Text>
           {isLoading ? (
             <ActivityIndicator color="#059669" className="py-6" />
           ) : sadaqahHistory.length === 0 ? (
             <View className="bg-white border border-slate-200 rounded-3xl p-6 items-center">
               <Ionicons name="receipt-outline" size={32} color="#cbd5e1" />
-              <Text className="text-slate-500 text-xs font-semibold mt-2">No past Sadaqah payments recorded yet</Text>
+              <Text className="text-slate-500 text-xs font-semibold mt-2">{t('noRecentContributions', language)}</Text>
             </View>
           ) : (
             <View className="gap-2.5">

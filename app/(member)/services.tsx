@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useLanguageStore } from '../../lib/store/languageStore';
+import { useAuthStore } from '../../store/auth.store';
 import { t } from '../../lib/i18n';
 import { colors, shadows, radius } from '../../lib/theme';
 
@@ -14,6 +15,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export default function ServicesScreen() {
   const router = useRouter();
   const { language } = useLanguageStore();
+  const { user } = useAuthStore();
   const [activeFilter, setActiveFilter] = useState<'all' | 'finance' | 'community' | 'facilities'>('all');
 
   const services = [
@@ -65,7 +67,7 @@ export default function ServicesScreen() {
       bg: '#FFFBEB',
       tag: 'OFFICIAL',
     },
-    {
+    ...((user?.role === 'sadar_mualim' || user?.role === 'madrasa_principal' || user?.role === 'super_admin') ? [{
       id: 'sadar-panel',
       category: 'community',
       categoryTitle: t('community', language),
@@ -76,7 +78,7 @@ export default function ServicesScreen() {
       color: '#0F6B5C',
       bg: '#ECFDF5',
       tag: 'MADRASA',
-    },
+    }] : []),
     {
       id: 'properties',
       category: 'facilities',

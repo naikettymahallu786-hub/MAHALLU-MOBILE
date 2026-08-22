@@ -477,7 +477,7 @@ export default function MoreScreen() {
                 {passwordLoading ? (
                   <ActivityIndicator color="#ffffff" size="small" />
                 ) : (
-                  <Text className="text-white font-bold text-sm">Update Password</Text>
+                  <Text className="text-white font-bold text-sm">{language === 'en' ? 'Update Password' : 'പാസ്‌വേഡ് മാറ്റുക'}</Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
@@ -551,11 +551,14 @@ export default function MoreScreen() {
             <TouchableOpacity
               onPress={() => {
                 setActiveModal(null);
-                Alert.alert('Saved', 'Notification preferences updated.');
+                Alert.alert(
+                  language === 'en' ? 'Saved' : 'സേവ് ചെയ്തു',
+                  language === 'en' ? 'Notification preferences updated.' : 'നോട്ടിഫിക്കേഷൻ ക്രമീകരണങ്ങൾ സേവ് ചെയ്തു.'
+                );
               }}
               className="mt-6 mb-4 bg-emerald-500 py-3.5 rounded-2xl items-center"
             >
-              <Text className="text-white font-bold text-sm">Save Preferences</Text>
+              <Text className="text-white font-bold text-sm">{language === 'en' ? 'Save Preferences' : 'സേവ് ചെയ്യുക'}</Text>
             </TouchableOpacity>
           </View>
         </View>
