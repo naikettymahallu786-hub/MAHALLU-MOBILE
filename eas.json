@@ -11,7 +11,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://mahallu-4d9t.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://mahallu-backend-cv55.onrender.com/api/v1"
       },
       "android": {
         "buildType": "apk"
