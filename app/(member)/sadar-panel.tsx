@@ -62,6 +62,8 @@ export default function SadarPanelScreen() {
 
   // On-the-fly New Usthadh Form
   const [newUsthadhName, setNewUsthadhName] = useState('');
+  const [newUsthadhEmail, setNewUsthadhEmail] = useState('');
+  const [newUsthadhPassword, setNewUsthadhPassword] = useState('');
   const [newUsthadhPhone, setNewUsthadhPhone] = useState('');
   const [newUsthadhQualification, setNewUsthadhQualification] = useState('Islamic Scholar / Usthadh');
 
@@ -203,7 +205,7 @@ export default function SadarPanelScreen() {
     }
   };
 
-  // 3. Create New Usthadh On-The-Fly
+  // 3. Create New Usthadh On-The-Fly with Login ID & Password
   const handleCreateNewUsthadh = async () => {
     if (!newUsthadhName.trim()) {
       Alert.alert('Missing Name', 'Please enter Usthadh name.');
@@ -214,6 +216,8 @@ export default function SadarPanelScreen() {
       setActionLoading(true);
       const res = await apiClient.post('/teachers', {
         name: newUsthadhName.trim(),
+        email: newUsthadhEmail.trim() || undefined,
+        password: newUsthadhPassword.trim() || undefined,
         phone: newUsthadhPhone.trim() || undefined,
         qualification: newUsthadhQualification.trim() || 'Islamic Scholar / Usthadh',
         salary: 0,
@@ -222,8 +226,13 @@ export default function SadarPanelScreen() {
       const newTeacher = res.data?.data;
       const newTeacherId = newTeacher?._id;
 
-      Alert.alert('Success 🎉', `Usthadh ${newUsthadhName} created and selected!`);
+      Alert.alert(
+        'Success 🎉',
+        `Usthadh ${newUsthadhName} created!\nLogin ID: ${newUsthadhEmail.trim() || newUsthadhPhone.trim() || 'Auto'}\nPassword: ${newUsthadhPassword.trim() || 'Usthadh@123456'}`
+      );
       setNewUsthadhName('');
+      setNewUsthadhEmail('');
+      setNewUsthadhPassword('');
       setNewUsthadhPhone('');
       setShowUsthadhPickerModal(false);
       await loadData();
@@ -1159,6 +1168,34 @@ export default function SadarPanelScreen() {
                     placeholder="e.g. Usthadh Mohammed Faizy"
                     value={newUsthadhName}
                     onChangeText={setNewUsthadhName}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Login ID / Email (ലോഗിൻ ഐഡി) *
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. faizy@mahallu.app or usthadh.ahmed"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    value={newUsthadhEmail}
+                    onChangeText={setNewUsthadhEmail}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Login Password (പാസ്‌വേഡ്) *
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. Usthadh@123456"
+                    autoCapitalize="none"
+                    secureTextEntry
+                    value={newUsthadhPassword}
+                    onChangeText={setNewUsthadhPassword}
                     style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
                   />
                 </View>
