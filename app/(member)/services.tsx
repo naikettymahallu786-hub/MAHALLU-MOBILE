@@ -66,6 +66,18 @@ export default function ServicesScreen() {
       tag: 'OFFICIAL',
     },
     {
+      id: 'sadar-panel',
+      category: 'community',
+      categoryTitle: t('community', language),
+      title: 'Sadar Mualim Panel',
+      desc: 'Create classes, assign Usthadhs & enrol family children',
+      route: '/(member)/sadar-panel',
+      icon: 'school' as const,
+      color: '#0F6B5C',
+      bg: '#ECFDF5',
+      tag: 'MADRASA',
+    },
+    {
       id: 'properties',
       category: 'facilities',
       categoryTitle: t('facilities', language),
