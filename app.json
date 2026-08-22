@@ -41,7 +41,13 @@
         "VIBRATE",
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -87,9 +93,13 @@
     "experiments": {
       "typedRoutes": true
     },
+    "owner": "sajalus-team",
     "extra": {
       "apiUrl": "https://mahallu-backend-cv55.onrender.com/api/v1",
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "6551c2b6-f27f-4802-8738-ec8dce355b14"
+      }
     }
   }
 }
