@@ -63,15 +63,19 @@ export async function initializeNotificationChannels() {
 
     // 3. Android High-Priority Channels
     if (Platform.OS === 'android') {
-      // Adhan / Voice channel with MAX importance so it alerts on lockscreen
+      // Adhan / Voice channel with MAX importance and ALARM attributes
       await Notifications.setNotificationChannelAsync('prayer-voice', {
         name: 'Adhan & Prayer Voice',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 500, 250, 500],
         lightColor: '#059669',
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: false,
-        sound: 'default',
+        bypassDnd: true,
+        sound: 'adhan.mp3',
+        audioAttributes: {
+          usage: Notifications.AndroidAudioUsage.ALARM,
+          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        },
       });
 
       // Silent / gentle notification channel
@@ -99,9 +103,9 @@ export async function initializeNotificationChannels() {
 }
 
 /**
- * Schedule Native Background Notifications for Today and Tomorrow
- * Even when the app is completely closed/killed, the phone's native OS Alarm Manager
- * will fire the notification and sound at the exact prayer minute.
+ * Schedule Native Background Notifications for the next 5 Days
+ * Even when the app is completely closed/killed/cleared from recents,
+ * the phone's native OS Alarm Manager will play the Adhan sound and show the notification.
  */
 export async function schedulePrayerNotifications(
   timings: Record<string, string>,
@@ -126,25 +130,29 @@ export async function schedulePrayerNotifications(
     }
 
     const now = new Date();
-    const isFriday = now.getDay() === 5;
 
     const prayerOrder = [
       { name: 'Fajr', key: 'Fajr' },
-      { name: isFriday ? 'Jumuah' : 'Dhuhr', key: 'Dhuhr' },
+      { name: 'Dhuhr', key: 'Dhuhr' },
       { name: 'Asr', key: 'Asr' },
       { name: 'Maghrib', key: 'Maghrib' },
       { name: 'Isha', key: 'Isha' },
     ];
 
-    // 2. Schedule for both Today (0) and Tomorrow (1)
-    for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+    // 2. Schedule for the next 5 days (0 to 4)
+    for (let dayOffset = 0; dayOffset < 5; dayOffset++) {
+      const dayDate = new Date();
+      dayDate.setDate(dayDate.getDate() + dayOffset);
+      const isFriday = dayDate.getDay() === 5;
+
       for (const p of prayerOrder) {
-        const prayerKey = (p.name === 'Jumuah' ? 'Dhuhr' : p.key) as keyof PrayerRemindersState;
+        const isJumuah = isFriday && p.name === 'Dhuhr';
+        const prayerKey = (isJumuah ? 'Dhuhr' : p.key) as keyof PrayerRemindersState;
         const mode = reminders[prayerKey] || 'voice';
 
         if (mode === 'off') continue; // User disabled reminder for this prayer
 
-        const bangTimeStr = timings[p.key === 'Jumuah' ? 'Dhuhr' : p.key];
+        const bangTimeStr = timings[p.key];
         if (!bangTimeStr) continue;
 
         const cleanTime = bangTimeStr.split(' ')[0];
@@ -158,38 +166,39 @@ export async function schedulePrayerNotifications(
         targetDate.setDate(targetDate.getDate() + dayOffset);
         targetDate.setHours(hour, min, 0, 0);
 
-        // If targetDate is already in the past, skip
+        // If targetDate is in the past, skip
         if (targetDate.getTime() <= now.getTime()) continue;
 
-        const prayerDisplayName = isMl ? (PRAYER_NAMES_ML[p.name] || p.name) : p.name;
-        const iqamahTime = iqamahTimes?.[p.name];
+        const pName = isJumuah ? 'Jumuah' : p.name;
+        const prayerDisplayName = isMl ? (PRAYER_NAMES_ML[pName] || pName) : pName;
+        const iqamahTime = iqamahTimes?.[pName];
 
         const title = isMl
           ? `🕌 ${prayerDisplayName} ബാങ്ക് സമയം`
-          : `🕌 ${p.name} Adhan Time`;
+          : `🕌 ${pName} Adhan Time`;
 
         const body = isMl
           ? `${prayerDisplayName} നമസ്കാര സമയം ആയിരിക്കുന്നു.${iqamahTime ? ` ജമാഅത്ത്: ${iqamahTime}` : ''}`
-          : `It is time for ${p.name} prayer.${iqamahTime ? ` Iqamah at ${iqamahTime}` : ''}`;
+          : `It is time for ${pName} prayer.${iqamahTime ? ` Iqamah at ${iqamahTime}` : ''}`;
 
-        const notificationId = `prayer_${p.name}_${dayOffset}_${hour}_${min}`;
+        const notificationId = `prayer_${pName}_${dayOffset}_${hour}_${min}`;
 
         await Notifications.scheduleNotificationAsync({
           identifier: notificationId,
           content: {
             title,
             body,
-            sound: mode === 'voice' ? true : false,
+            sound: mode === 'voice' ? 'adhan.mp3' : undefined,
             data: {
               type: 'prayer-adhan',
-              prayerName: p.name,
+              prayerName: pName,
               mode,
-              channelId: mode === 'voice' ? 'prayer-voice' : 'prayer-silent',
             },
           },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
             date: targetDate,
+            channelId: mode === 'voice' ? 'prayer-voice' : 'prayer-silent',
           } as any,
         });
       }
