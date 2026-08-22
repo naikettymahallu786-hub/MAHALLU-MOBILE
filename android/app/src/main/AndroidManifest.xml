@@ -56,5 +56,16 @@
         <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
       </intent-filter>
     </receiver>
+
+    <!-- Custom Native Adhan Full Audio Service & Receiver -->
+    <service
+      android:name=".AdhanService"
+      android:enabled="true"
+      android:exported="false"
+      android:foregroundServiceType="mediaPlayback" />
+    <receiver
+      android:name=".AdhanAlarmReceiver"
+      android:enabled="true"
+      android:exported="false" />
   </application>
 </manifest>

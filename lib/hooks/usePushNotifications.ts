@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '../../store/auth.store';
 import { io } from 'socket.io-client';
-import { baseOrigin } from '../api';
+import { apiClient, baseOrigin } from '../api';
 import { initializeNotificationChannels } from '../services/prayerNotificationService';
 
 export function usePushNotifications() {
@@ -14,7 +14,18 @@ export function usePushNotifications() {
 
     if (!isAuthenticated || !user) return;
 
-    // 2. Connect to real-time Socket.io server
+    // 2. Register Expo Push Token with Backend (for notifications when app is closed)
+    Notifications.getExpoPushTokenAsync()
+      .then((pushTokenData) => {
+        if (pushTokenData?.data) {
+          apiClient.patch('/auth/fcm-token', { fcmToken: pushTokenData.data }).catch(() => {});
+        }
+      })
+      .catch((err) => {
+        console.warn('[Push] Error getting push token:', err);
+      });
+
+    // 3. Connect to real-time Socket.io server
     const socket = io(baseOrigin, {
       transports: ['websocket'],
       autoConnect: true,
