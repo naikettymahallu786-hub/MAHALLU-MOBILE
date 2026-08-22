@@ -16,7 +16,7 @@ import {
 } from '../lib/services/prayerNotificationService';
 
 const ADHAN_AUDIO_URLS = [
-  'https://mahallu-4d9t.onrender.com/adhan.mp3',
+  'https://mahallu-backend-cv55.onrender.com/adhan.mp3',
   'https://raw.githubusercontent.com/abodehq/Athan-MP3/master/Athan.mp3',
 ];
 

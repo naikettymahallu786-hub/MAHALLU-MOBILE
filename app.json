@@ -88,7 +88,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiUrl": "https://mahallu-4d9t.onrender.com/api/v1",
+      "apiUrl": "https://mahallu-backend-cv55.onrender.com/api/v1",
       "router": {}
     }
   }

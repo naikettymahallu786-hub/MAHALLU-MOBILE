@@ -18,6 +18,9 @@
       }
     },
     "preview-simulator": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://mahallu-backend-cv55.onrender.com/api/v1"
+      },
       "ios": {
         "simulator": true
       }
@@ -25,7 +28,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://mahallu-4d9t.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://mahallu-backend-cv55.onrender.com/api/v1"
       }
     }
   },
