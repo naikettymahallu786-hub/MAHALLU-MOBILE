@@ -16,22 +16,25 @@ import * as Linking from 'expo-linking';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, baseOrigin } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
+import { useLanguageStore } from '../../lib/store/languageStore';
+import { t } from '../../lib/i18n';
 
 const PRESET_AMOUNTS = [50, 100, 250, 500, 1000, 2500];
-
-const SADAQAH_CATEGORIES = [
-  { id: 'General Sadaqah', label: 'General Sadaqah (സ്വദഖ)', icon: 'heart-outline' },
-  { id: 'Mosque Maintenance', label: 'Mosque & Water Fund (പള്ളി ഫണ്ട്)', icon: 'business-outline' },
-  { id: 'Orphan & Relief', label: 'Orphan & Relief Support (അനാഥ ഫണ്ട്)', icon: 'people-outline' },
-  { id: 'Food & Medical Aid', label: 'Food & Medical Aid (മെഡിക്കൽ ഫണ്ട്)', icon: 'medkit-outline' },
-  { id: 'Education Fund', label: 'Education & Madrasa (വിദ്യാഭ്യാസ ഫണ്ട്)', icon: 'school-outline' },
-];
 
 export default function SadaqahScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ status?: string; paymentId?: string; error?: string }>();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const { language } = useLanguageStore();
+
+  const SADAQAH_CATEGORIES = [
+    { id: 'General Sadaqah', label: language === 'ml' ? 'പൊതു സ്വദഖ (General Sadaqah)' : 'General Sadaqah (പൊതു സ്വദഖ)', icon: 'heart-outline' },
+    { id: 'Mosque Maintenance', label: language === 'ml' ? 'പള്ളി സംരക്ഷണ ഫണ്ട്' : 'Mosque & Water Fund (പള്ളി ഫണ്ട്)', icon: 'business-outline' },
+    { id: 'Orphan & Relief', label: language === 'ml' ? 'അഗതി-അനാഥ സംരക്ഷണം' : 'Orphan & Relief Support (അനാഥ ഫണ്ട്)', icon: 'people-outline' },
+    { id: 'Food & Medical Aid', label: language === 'ml' ? 'മെഡിക്കൽ & റിലീഫ് ഫണ്ട്' : 'Food & Medical Aid (മെഡിക്കൽ ഫണ്ട്)', icon: 'medkit-outline' },
+    { id: 'Education Fund', label: language === 'ml' ? 'വിദ്യാഭ്യാസ & മദ്രസ ഫണ്ട്' : 'Education & Madrasa (വിദ്യാഭ്യാസ ഫണ്ട്)', icon: 'school-outline' },
+  ];
 
   const [selectedAmount, setSelectedAmount] = useState<number | null>(100);
   const [customAmount, setCustomAmount] = useState('');

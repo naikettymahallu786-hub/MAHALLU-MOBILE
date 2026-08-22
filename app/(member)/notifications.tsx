@@ -11,6 +11,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useNotifications } from '../../lib/hooks/useNotifications';
+import { useLanguageStore } from '../../lib/store/languageStore';
+import { t } from '../../lib/i18n';
 import { LoadingScreen } from '../../components/ui/LoadingScreen';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { NotificationItem } from '../../components/NotificationItem';
@@ -23,11 +25,12 @@ const GOLD = '#C9972E';
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { language } = useLanguageStore();
   const { data: notifications, isLoading, refetch } = useNotifications();
   const [selectedNotif, setSelectedNotif] = useState<any | null>(null);
   const [readNotifIds, setReadNotifIds] = useState<Record<string, boolean>>({});
 
-  if (isLoading) return <LoadingScreen message="Loading notifications..." />;
+  if (isLoading) return <LoadingScreen message={language === 'en' ? 'Loading notifications...' : 'അറിയിപ്പുകൾ ലോഡ് ചെയ്യുന്നു...'} />;
 
   // Determine type from title/body or channel heuristics
   const getType = (notif: any) => {
@@ -91,8 +94,8 @@ export default function NotificationsScreen() {
             <Ionicons name="arrow-back" size={20} color={TEAL_DARK} />
           </TouchableOpacity>
           <View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: TEAL_DARK }}>Notifications</Text>
-            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>അറിയിപ്പുകൾ & സന്ദേശങ്ങൾ</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: TEAL_DARK }}>{t('notifications', language)}</Text>
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{t('notificationsDesc', language)}</Text>
           </View>
         </View>
 
@@ -107,7 +110,7 @@ export default function NotificationsScreen() {
             }}
             style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: '#f1f5f9' }}
           >
-            <Text style={{ fontSize: 11, fontWeight: '800', color: TEAL }}>Mark all read</Text>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: TEAL }}>{t('markAllRead', language)}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -119,8 +122,8 @@ export default function NotificationsScreen() {
         {!notifications || notifications.length === 0 ? (
           <EmptyState
             icon="notifications-off-outline"
-            title="All Caught Up!"
-            message="You don't have any new notifications."
+            title={t('allCaughtUp', language)}
+            message={t('noNotifications', language)}
           />
         ) : (
           <View className="pb-8">
@@ -230,7 +233,7 @@ export default function NotificationsScreen() {
                 }}
               >
                 <Text style={{ color: 'white', fontWeight: '900', fontSize: 14, marginRight: 6 }}>
-                  View Related Page
+                  {t('viewRelatedPage', language)}
                 </Text>
                 <Ionicons name="arrow-forward" size={16} color="white" />
               </TouchableOpacity>
@@ -244,7 +247,7 @@ export default function NotificationsScreen() {
                   alignItems: 'center',
                 }}
               >
-                <Text style={{ color: '#64748b', fontWeight: '800', fontSize: 13 }}>Dismiss</Text>
+                <Text style={{ color: '#64748b', fontWeight: '800', fontSize: 13 }}>{t('dismiss', language)}</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>

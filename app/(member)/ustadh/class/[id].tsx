@@ -4,12 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useUstadhClasses } from '../../../../lib/hooks/useUstadh';
+import { useLanguageStore } from '../../../../lib/store/languageStore';
+import { t } from '../../../../lib/i18n';
 import { Avatar } from '../../../../components/ui/Avatar';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 export default function ClassDetailsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
+  const { language } = useLanguageStore();
   const { data: classes, isLoading } = useUstadhClasses();
 
   const classData = classes?.find((c: any) => c._id === id);
@@ -50,12 +53,12 @@ export default function ClassDetailsScreen() {
         {/* Class Metadata Card */}
         <Animated.View entering={FadeInDown.springify()} className="bg-white rounded-2xl p-4 mb-6 border border-slate-100 shadow-sm">
           <View className="flex-row justify-between items-center mb-2">
-            <Text className="text-slate-500 text-xs font-bold uppercase tracking-wider">Academic Grade</Text>
+            <Text className="text-slate-500 text-xs font-bold uppercase tracking-wider">{t('academicLevel', language)}</Text>
             <View className="bg-emerald-50 px-2.5 py-1 rounded-lg">
               <Text className="text-emerald-700 font-bold text-xs">Level {classData.level || 1}</Text>
             </View>
           </View>
-          <Text className="text-slate-500 text-xs font-medium mb-3">Academic Year: {classData.academicYear || '2026-2027'}</Text>
+          <Text className="text-slate-500 text-xs font-medium mb-3">{t('academicYear', language)}: {classData.academicYear || '2026-2027'}</Text>
           {classData.subjects && classData.subjects.length > 0 && (
             <View className="flex-row flex-wrap gap-1.5 pt-2 border-t border-slate-100">
               {classData.subjects.map((sub: string, i: number) => (
@@ -77,7 +80,7 @@ export default function ClassDetailsScreen() {
             <View className="w-12 h-12 rounded-full bg-emerald-100 items-center justify-center mb-2">
               <Ionicons name="checkmark-done-circle" size={26} color="#10b981" />
             </View>
-            <Text className="text-emerald-800 font-bold text-sm">Mark Attendance</Text>
+            <Text className="text-emerald-800 font-bold text-sm">{t('markAttendance', language)}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -88,16 +91,16 @@ export default function ClassDetailsScreen() {
             <View className="w-12 h-12 rounded-full bg-blue-100 items-center justify-center mb-2">
               <Ionicons name="megaphone" size={24} color="#3b82f6" />
             </View>
-            <Text className="text-blue-800 font-bold text-sm">Send Notice</Text>
+            <Text className="text-blue-800 font-bold text-sm">{t('sendNotice', language)}</Text>
           </TouchableOpacity>
         </Animated.View>
 
         {classData.schedule && (
           <Animated.View entering={FadeInDown.delay(150).springify()} className="mb-8">
             <View className="flex-row items-center justify-between mb-4">
-              <Text className="text-slate-500 font-bold uppercase text-[11px] tracking-wider">Timetable</Text>
+              <Text className="text-slate-500 font-bold uppercase text-[11px] tracking-wider">{t('timetable', language)}</Text>
               <TouchableOpacity onPress={() => router.push(`/(member)/ustadh/timetable/${classData._id}`)}>
-                <Text className="text-emerald-600 font-bold text-xs uppercase tracking-wider">Edit</Text>
+                <Text className="text-emerald-600 font-bold text-xs uppercase tracking-wider">{t('edit', language)}</Text>
               </TouchableOpacity>
             </View>
             
@@ -123,19 +126,19 @@ export default function ClassDetailsScreen() {
             ) : (
               <View className="bg-slate-100 rounded-2xl p-6 items-center border border-slate-200 border-dashed">
                 <Ionicons name="calendar-outline" size={32} color="#94a3b8" />
-                <Text className="text-slate-500 font-medium text-xs mt-2">No timetable configured</Text>
+                <Text className="text-slate-500 font-medium text-xs mt-2">{language === 'en' ? 'No timetable configured' : 'ടൈംടേബിൾ ചേർത്തിട്ടില്ല'}</Text>
                 <TouchableOpacity onPress={() => router.push(`/(member)/ustadh/timetable/${classData._id}`)} className="mt-3 bg-white px-4 py-1.5 rounded-full border border-slate-200 shadow-sm">
-                  <Text className="text-slate-700 font-bold text-xs">Setup Now</Text>
+                  <Text className="text-slate-700 font-bold text-xs">{t('setupNow', language)}</Text>
                 </TouchableOpacity>
               </View>
             )}
           </Animated.View>
         )}
 
-        <Text className="text-slate-500 font-bold uppercase text-[11px] tracking-wider mb-4">Enrolled Students ({classData.students?.length || 0})</Text>
+        <Text className="text-slate-500 font-bold uppercase text-[11px] tracking-wider mb-4">{t('enrolledStudents', language)} ({classData.students?.length || 0})</Text>
         
         {classData.students?.length === 0 ? (
-          <Text className="text-slate-500 text-center py-8">No students assigned to this class.</Text>
+          <Text className="text-slate-500 text-center py-8">{t('noStudentsAssigned', language)}</Text>
         ) : (
           classData.students?.map((student: any, index: number) => {
             const member = student.memberId || {};

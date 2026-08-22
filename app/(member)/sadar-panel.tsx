@@ -14,6 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../../lib/api';
+import { useLanguageStore } from '../../lib/store/languageStore';
+import { t } from '../../lib/i18n';
 
 // Theme colors
 const TEAL_DARK = '#0B4A42';
@@ -23,6 +25,7 @@ const CREAM = '#FBF8F2';
 
 export default function SadarPanelScreen() {
   const router = useRouter();
+  const { language } = useLanguageStore();
 
   // Active Main Tab: 'classes' | 'enroll'
   const [activeMainTab, setActiveMainTab] = useState<'classes' | 'enroll'>('classes');
@@ -505,8 +508,8 @@ export default function SadarPanelScreen() {
             <Ionicons name="arrow-back" size={20} color={TEAL_DARK} />
           </TouchableOpacity>
           <View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: TEAL_DARK }}>Sadar Mualim Panel</Text>
-            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>സദർ മുഅല്ലിം & മദ്രസ മാനേജ്‌മെന്റ്</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: TEAL_DARK }}>{t('sadarMualimPanel', language)}</Text>
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{language === 'en' ? 'Sadar Mualim & Madrasa Management' : 'സദർ മുഅല്ലിം & മദ്രസ മാനേജ്‌മെന്റ്'}</Text>
           </View>
         </View>
 
@@ -523,7 +526,7 @@ export default function SadarPanelScreen() {
             }}
           >
             <Ionicons name="add" size={16} color="white" style={{ marginRight: 4 }} />
-            <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>New Class</Text>
+            <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>{t('newClass', language)}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -541,7 +544,7 @@ export default function SadarPanelScreen() {
           }}
         >
           <Text style={{ color: activeMainTab === 'classes' ? 'white' : '#64748b', fontWeight: '800', fontSize: 13 }}>
-            📚 Classes & Usthadhs ({classes.length})
+            📚 {t('classesAndUsthadhs', language)} ({classes.length})
           </Text>
         </TouchableOpacity>
 
@@ -556,7 +559,7 @@ export default function SadarPanelScreen() {
           }}
         >
           <Text style={{ color: activeMainTab === 'enroll' ? 'white' : '#64748b', fontWeight: '800', fontSize: 13 }}>
-            🏠 Family Enrolment
+            🏠 {t('familyEnrolment', language)}
           </Text>
         </TouchableOpacity>
       </View>
@@ -572,15 +575,15 @@ export default function SadarPanelScreen() {
           {classes.length === 0 ? (
             <View style={{ padding: 40, alignItems: 'center', backgroundColor: 'white', borderRadius: 20, borderWidth: 1, borderColor: '#ebdcb9' }}>
               <Ionicons name="book-outline" size={44} color="#94a3b8" />
-              <Text style={{ fontSize: 16, fontWeight: '800', color: TEAL_DARK, marginTop: 12 }}>No Classes Created</Text>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: TEAL_DARK, marginTop: 12 }}>{t('noClassesCreated', language)}</Text>
               <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginTop: 4, marginBottom: 16 }}>
-                Create your first Madrasa class, assign an Usthadh from members, and enroll students.
+                {t('noClassesDesc', language)}
               </Text>
               <TouchableOpacity
                 onPress={() => setShowCreateClassModal(true)}
                 style={{ backgroundColor: TEAL, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }}
               >
-                <Text style={{ color: 'white', fontWeight: '800', fontSize: 13 }}>+ Create Class Now</Text>
+                <Text style={{ color: 'white', fontWeight: '800', fontSize: 13 }}>+ {t('createClassNow', language)}</Text>
               </TouchableOpacity>
             </View>
           ) : (
