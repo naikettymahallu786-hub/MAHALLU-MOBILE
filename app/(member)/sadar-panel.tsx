@@ -113,8 +113,15 @@ export default function SadarPanelScreen() {
         if (Array.isArray(items)) setMembers(items);
       }
       if (familiesRes.status === 'fulfilled') {
-        const fData = familiesRes.value.data?.data?.families || familiesRes.value.data?.data;
-        if (Array.isArray(fData)) setFamilies(fData);
+        const fData = familiesRes.value.data?.data;
+        const familyArray = Array.isArray(fData)
+          ? fData
+          : Array.isArray(fData?.families)
+          ? fData.families
+          : Array.isArray(familiesRes.value.data)
+          ? familiesRes.value.data
+          : [];
+        setFamilies(familyArray);
       }
       if (studentsRes.status === 'fulfilled') {
         const sData = studentsRes.value.data?.data;
