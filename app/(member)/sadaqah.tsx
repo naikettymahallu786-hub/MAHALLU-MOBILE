@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useGlobalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, baseOrigin } from '../../lib/api';
@@ -23,7 +23,7 @@ const PRESET_AMOUNTS = [50, 100, 250, 500, 1000, 2500];
 
 export default function SadaqahScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ status?: string; paymentId?: string; error?: string }>();
+  const params = useGlobalSearchParams<{ status?: string; paymentId?: string; error?: string }>();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const { language } = useLanguageStore();

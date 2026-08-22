@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useGlobalSearchParams } from 'expo-router';
 import { usePayments } from '../../lib/hooks/usePayments';
 import { useProfile } from '../../lib/hooks/useProfile';
 import { useDues } from '../../lib/hooks/useDues';
@@ -23,7 +23,7 @@ const CREAM = '#FBF8F2';
 export default function PaymentsScreen() {
   const router = useRouter();
   const { language } = useLanguageStore();
-  const params = useLocalSearchParams<{ status?: string; error?: string; paymentId?: string }>();
+  const params = useGlobalSearchParams<{ status?: string; error?: string; paymentId?: string }>();
   const { data: paymentsData, isLoading: paymentsLoading, refetch: refetchPayments } = usePayments(1);
   const { data: profileData, isLoading: profileLoading } = useProfile();
   const { data: duesData, isLoading: duesLoading, refetch: refetchDues } = useDues();
