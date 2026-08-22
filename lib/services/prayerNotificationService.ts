@@ -205,6 +205,7 @@ export async function schedulePrayerNotifications(
                 type: 'prayer-adhan',
                 prayerName: p.name,
                 mode,
+                channelId: mode === 'voice' ? 'prayer-voice' : 'prayer-silent',
               },
             },
             trigger: {
@@ -220,3 +221,34 @@ export async function schedulePrayerNotifications(
     console.warn('[Prayer Notification Scheduling] Error:', err);
   }
 }
+
+/**
+ * Schedule a test notification in 10 seconds so the user can test
+ * closing the app and locking the screen.
+ */
+export async function scheduleTestPrayerNotification(language: 'en' | 'ml' = 'en') {
+  await initializeNotificationChannels();
+  const isMl = language === 'ml';
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: isMl ? '🕌 ടെസ്റ്റ് ബാങ്ക് (Test Adhan)' : '🕌 Test Adhan Alarm',
+      body: isMl
+        ? 'ബാങ്ക് ശബ്ദവും അറിയിപ്പും ഫോൺ ലോക്ക് ചെയ്താലും കൃത്യമായി പ്രവർത്തിക്കുന്നു!'
+        : 'Background Adhan notification is working on closed/locked phone!',
+      sound: 'adhan.mp3',
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      data: {
+        type: 'prayer-adhan',
+        mode: 'voice',
+        channelId: 'prayer-voice',
+      },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: 10,
+      channelId: 'prayer-voice',
+    },
+  });
+}
+

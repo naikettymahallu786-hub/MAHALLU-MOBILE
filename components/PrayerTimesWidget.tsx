@@ -9,6 +9,7 @@ import { Asset } from 'expo-asset';
 import { useLanguageStore } from '../lib/store/languageStore';
 import {
   schedulePrayerNotifications,
+  scheduleTestPrayerNotification,
   DEFAULT_REMINDERS,
   PrayerRemindersState,
   ReminderMode,
@@ -387,24 +388,45 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
           </View>
         </View>
 
-        {/* Test Adhan Audio Button */}
-        <TouchableOpacity
-          onPress={playAdhanAudio}
-          className={`flex-row items-center px-3 py-1.5 rounded-full border ${
-            isPlayingAdhan ? 'bg-emerald-600 border-emerald-600' : 'bg-emerald-50 border-emerald-200'
-          }`}
-        >
-          <Ionicons
-            name={isPlayingAdhan ? 'stop-circle' : 'volume-high'}
-            size={14}
-            color={isPlayingAdhan ? '#ffffff' : '#059669'}
-          />
-          <Text className={`text-[11px] font-bold ml-1.5 ${isPlayingAdhan ? 'text-white' : 'text-emerald-700'}`}>
-            {isPlayingAdhan
-              ? (isMl ? 'ശബ്ദം നിർത്തുക' : 'Stop Voice')
-              : (isMl ? 'ബാങ്ക് കേൾക്കുക' : 'Test Bang Voice')}
-          </Text>
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-1.5">
+          {/* Test 10s Background Alarm Button */}
+          <TouchableOpacity
+            onPress={async () => {
+              await scheduleTestPrayerNotification(language);
+              Alert.alert(
+                isMl ? 'ടെസ്റ്റ് അലാറം ഷെഡ്യൂൾ ചെയ്തു' : 'Test Alarm Scheduled',
+                isMl
+                  ? '10 സെക്കൻഡിൽ ബാങ്ക് ശബ്ദത്തോടെ നോട്ടിഫിക്കേഷൻ വരും. ഇപ്പോൾ ആപ്പ് പൂർണ്ണമായി ക്ലോസ് ചെയ്ത് ഫോൺ ലോക്ക് ചെയ്ത് പരിശോധിക്കാം!'
+                  : 'Adhan notification with sound will arrive in 10 seconds. You can now close/swipe away the app and lock your phone to test!'
+              );
+            }}
+            className="flex-row items-center px-2.5 py-1.5 rounded-full border bg-amber-50 border-amber-200"
+          >
+            <Ionicons name="alarm-outline" size={13} color="#d97706" />
+            <Text className="text-[10px] font-bold ml-1 text-amber-800">
+              {isMl ? '10s ടെസ്റ്റ്' : 'Test 10s'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Test Adhan Live Audio Button */}
+          <TouchableOpacity
+            onPress={playAdhanAudio}
+            className={`flex-row items-center px-2.5 py-1.5 rounded-full border ${
+              isPlayingAdhan ? 'bg-emerald-600 border-emerald-600' : 'bg-emerald-50 border-emerald-200'
+            }`}
+          >
+            <Ionicons
+              name={isPlayingAdhan ? 'stop-circle' : 'volume-high'}
+              size={13}
+              color={isPlayingAdhan ? '#ffffff' : '#059669'}
+            />
+            <Text className={`text-[10px] font-bold ml-1 ${isPlayingAdhan ? 'text-white' : 'text-emerald-700'}`}>
+              {isPlayingAdhan
+                ? (isMl ? 'നിർത്തുക' : 'Stop')
+                : (isMl ? 'ബാങ്ക്' : 'Audio')}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Next Prayer Banner */}
