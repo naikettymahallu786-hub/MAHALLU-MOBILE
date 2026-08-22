@@ -91,7 +91,7 @@ export default function SadarPanelScreen() {
   const loadData = async () => {
     try {
       setRefreshing(true);
-      const [classesRes, teachersRes, membersRes, familiesRes, studentsRes] = await Promise.all([
+      const [classesRes, teachersRes, membersRes, familiesRes, studentsRes] = await Promise.allSettled([
         apiClient.get('/classes'),
         apiClient.get('/teachers', { params: { limit: 1000 } }),
         apiClient.get('/members', { params: { limit: 2000 } }),
@@ -99,12 +99,27 @@ export default function SadarPanelScreen() {
         apiClient.get('/students', { params: { limit: 1000 } }),
       ]);
 
-      setClasses(classesRes.data?.data || []);
-      setTeachers(teachersRes.data?.data || teachersRes.data || []);
-      const membersData = membersRes.data?.data;
-      setMembers(Array.isArray(membersData) ? membersData : membersData?.items || []);
-      setFamilies(familiesRes.data?.data?.families || familiesRes.data?.data || []);
-      setAllStudents(studentsRes.data?.data || []);
+      if (classesRes.status === 'fulfilled') {
+        const clsData = classesRes.value.data?.data;
+        if (Array.isArray(clsData)) setClasses(clsData);
+      }
+      if (teachersRes.status === 'fulfilled') {
+        const tData = teachersRes.value.data?.data || teachersRes.value.data;
+        if (Array.isArray(tData)) setTeachers(tData);
+      }
+      if (membersRes.status === 'fulfilled') {
+        const mData = membersRes.value.data?.data;
+        const items = Array.isArray(mData) ? mData : mData?.items || [];
+        if (Array.isArray(items)) setMembers(items);
+      }
+      if (familiesRes.status === 'fulfilled') {
+        const fData = familiesRes.value.data?.data?.families || familiesRes.value.data?.data;
+        if (Array.isArray(fData)) setFamilies(fData);
+      }
+      if (studentsRes.status === 'fulfilled') {
+        const sData = studentsRes.value.data?.data;
+        if (Array.isArray(sData)) setAllStudents(sData);
+      }
     } catch (err) {
       console.warn('[Sadar Panel] Error loading data:', err);
     } finally {
@@ -152,7 +167,15 @@ export default function SadarPanelScreen() {
         payload.teacherId = newClassTeacherId;
       }
 
-      await apiClient.post('/classes', payload);
+      const res = await apiClient.post('/classes', payload);
+      const createdClass = res.data?.data;
+      if (createdClass) {
+        setClasses((prev) => {
+          const filtered = prev.filter((c) => c._id !== createdClass._id);
+          return [createdClass, ...filtered];
+        });
+      }
+
       Alert.alert('Success 🎉', 'Madrasa class created successfully! (ക്ലാസ് വിജയകരമായി ചേർത്തു)');
       setShowCreateClassModal(false);
       setNewClassName('');
