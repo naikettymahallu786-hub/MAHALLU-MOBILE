@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  FlatList,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -36,6 +35,7 @@ export default function SadarPanelScreen() {
   // Main Data
   const [classes, setClasses] = useState<any[]>([]);
   const [teachers, setTeachers] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
   const [families, setFamilies] = useState<any[]>([]);
   const [allStudents, setAllStudents] = useState<any[]>([]);
 
@@ -54,9 +54,16 @@ export default function SadarPanelScreen() {
   const [newClassTeacherId, setNewClassTeacherId] = useState('');
   const [newClassSubjects, setNewClassSubjects] = useState('Quran, Fiqh, Arabic, Thareekh');
 
-  // Change Usthadh Modal
-  const [showUsthadhModal, setShowUsthadhModal] = useState(false);
-  const [selectedUsthadhId, setSelectedUsthadhId] = useState('');
+  // Unified Usthadh Picker Modal (for creating class or changing usthadh)
+  const [showUsthadhPickerModal, setShowUsthadhPickerModal] = useState(false);
+  const [usthadhPickerMode, setUsthadhPickerMode] = useState<'create_class' | 'change_class_usthadh'>('create_class');
+  const [usthadhSearchQuery, setUsthadhSearchQuery] = useState('');
+  const [usthadhSubTab, setUsthadhSubTab] = useState<'search' | 'new'>('search');
+
+  // On-the-fly New Usthadh Form
+  const [newUsthadhName, setNewUsthadhName] = useState('');
+  const [newUsthadhPhone, setNewUsthadhPhone] = useState('');
+  const [newUsthadhQualification, setNewUsthadhQualification] = useState('Islamic Scholar / Usthadh');
 
   // Add Students to Selected Class Modal
   const [showAddStudentsModal, setShowAddStudentsModal] = useState(false);
@@ -82,15 +89,18 @@ export default function SadarPanelScreen() {
   const loadData = async () => {
     try {
       setRefreshing(true);
-      const [classesRes, teachersRes, familiesRes, studentsRes] = await Promise.all([
+      const [classesRes, teachersRes, membersRes, familiesRes, studentsRes] = await Promise.all([
         apiClient.get('/classes'),
-        apiClient.get('/teachers'),
+        apiClient.get('/teachers', { params: { limit: 1000 } }),
+        apiClient.get('/members', { params: { limit: 2000 } }),
         apiClient.get('/families', { params: { limit: 1000 } }),
         apiClient.get('/students', { params: { limit: 1000 } }),
       ]);
 
       setClasses(classesRes.data?.data || []);
       setTeachers(teachersRes.data?.data || teachersRes.data || []);
+      const membersData = membersRes.data?.data;
+      setMembers(Array.isArray(membersData) ? membersData : membersData?.items || []);
       setFamilies(familiesRes.data?.data?.families || familiesRes.data?.data || []);
       setAllStudents(studentsRes.data?.data || []);
     } catch (err) {
@@ -108,7 +118,6 @@ export default function SadarPanelScreen() {
   // Fetch students for a specific class when opened
   const handleOpenClassDetails = async (cls: any) => {
     setSelectedClass(cls);
-    setSelectedUsthadhId(cls.teacherId?._id || cls.teacherId || '');
     try {
       setFetchingClassStudents(true);
       const res = await apiClient.get(`/students?classId=${cls._id}&limit=200`);
@@ -142,11 +151,11 @@ export default function SadarPanelScreen() {
       }
 
       await apiClient.post('/classes', payload);
-      Alert.alert('Success 🎉', 'Madrasa class created successfully!');
+      Alert.alert('Success 🎉', 'Madrasa class created successfully! (ക്ലാസ് വിജയകരമായി ചേർത്തു)');
       setShowCreateClassModal(false);
       setNewClassName('');
       setNewClassTeacherId('');
-      loadData();
+      await loadData();
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to create class');
     } finally {
@@ -154,30 +163,85 @@ export default function SadarPanelScreen() {
     }
   };
 
-  // 2. Assign / Change Usthadh for Selected Class
-  const handleAssignUsthadh = async () => {
-    if (!selectedClass) return;
-
+  // 2. Select Usthadh from List (Teacher or Member)
+  const handleSelectUsthadh = async (item: { teacherId?: string; memberId?: string; name: string; phone?: string }) => {
     try {
       setActionLoading(true);
-      await apiClient.put(`/classes/${selectedClass._id}`, {
-        teacherId: selectedUsthadhId || null,
-      });
-      Alert.alert('Success 🎉', 'Class Usthadh updated successfully!');
-      setShowUsthadhModal(false);
-      loadData();
+      let teacherId = item.teacherId;
 
-      // Update current class object
-      const updatedTeacher = teachers.find((t) => t._id === selectedUsthadhId);
-      setSelectedClass((prev: any) => ({ ...prev, teacherId: updatedTeacher }));
+      // If user selected a Mahallu Member who is not registered as a teacher yet, create teacher record
+      if (!teacherId && item.memberId) {
+        const createTeacherRes = await apiClient.post('/teachers', {
+          memberId: item.memberId,
+          qualification: 'Usthadh / Teacher',
+          salary: 0,
+        });
+        teacherId = createTeacherRes.data?.data?._id;
+        await loadData();
+      }
+
+      if (!teacherId) {
+        Alert.alert('Error', 'Could not select teacher');
+        return;
+      }
+
+      if (usthadhPickerMode === 'create_class') {
+        setNewClassTeacherId(teacherId);
+        setShowUsthadhPickerModal(false);
+      } else if (usthadhPickerMode === 'change_class_usthadh' && selectedClass) {
+        await apiClient.put(`/classes/${selectedClass._id}`, { teacherId });
+        Alert.alert('Success 🎉', 'Class Usthadh updated successfully!');
+        setShowUsthadhPickerModal(false);
+        await loadData();
+        const updatedTeacher = teachers.find((t) => t._id === teacherId);
+        setSelectedClass((prev: any) => ({ ...prev, teacherId: updatedTeacher || { name: item.name } }));
+      }
     } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to update Usthadh');
+      Alert.alert('Error', err.response?.data?.message || 'Failed to set Usthadh');
     } finally {
       setActionLoading(false);
     }
   };
 
-  // 3. Enrol Students from Selected Family to Class
+  // 3. Create New Usthadh On-The-Fly
+  const handleCreateNewUsthadh = async () => {
+    if (!newUsthadhName.trim()) {
+      Alert.alert('Missing Name', 'Please enter Usthadh name.');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const res = await apiClient.post('/teachers', {
+        name: newUsthadhName.trim(),
+        phone: newUsthadhPhone.trim() || undefined,
+        qualification: newUsthadhQualification.trim() || 'Islamic Scholar / Usthadh',
+        salary: 0,
+      });
+
+      const newTeacher = res.data?.data;
+      const newTeacherId = newTeacher?._id;
+
+      Alert.alert('Success 🎉', `Usthadh ${newUsthadhName} created and selected!`);
+      setNewUsthadhName('');
+      setNewUsthadhPhone('');
+      setShowUsthadhPickerModal(false);
+      await loadData();
+
+      if (usthadhPickerMode === 'create_class') {
+        setNewClassTeacherId(newTeacherId);
+      } else if (usthadhPickerMode === 'change_class_usthadh' && selectedClass) {
+        await apiClient.put(`/classes/${selectedClass._id}`, { teacherId: newTeacherId });
+        setSelectedClass((prev: any) => ({ ...prev, teacherId: newTeacher }));
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to create new Usthadh');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 4. Enrol Students from Selected Family to Class
   const handleEnrolFamilyChildren = async () => {
     if (!selectedClass || !selectedFamilyForClass || selectedFamilyMemberIds.length === 0) {
       Alert.alert('Selection Missing', 'Please select at least one child from the family.');
@@ -204,7 +268,7 @@ export default function SadarPanelScreen() {
       setShowAddStudentsModal(false);
       setSelectedFamilyForClass(null);
       setSelectedFamilyMemberIds([]);
-      loadData();
+      await loadData();
       handleOpenClassDetails(selectedClass);
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to enrol children');
@@ -213,7 +277,7 @@ export default function SadarPanelScreen() {
     }
   };
 
-  // 4. Assign Existing Students to Class
+  // 5. Assign Existing Students to Class
   const handleAssignExistingStudents = async () => {
     if (!selectedClass || selectedExistingStudentIds.length === 0) return;
 
@@ -228,7 +292,7 @@ export default function SadarPanelScreen() {
       Alert.alert('Success 🎉', 'Assigned students to class!');
       setShowAddStudentsModal(false);
       setSelectedExistingStudentIds([]);
-      loadData();
+      await loadData();
       handleOpenClassDetails(selectedClass);
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to assign students');
@@ -237,7 +301,7 @@ export default function SadarPanelScreen() {
     }
   };
 
-  // 5. Remove Student from Class
+  // 6. Remove Student from Class
   const handleRemoveStudentFromClass = async (studentId: string, studentName: string) => {
     Alert.alert(
       'Remove Student',
@@ -271,6 +335,22 @@ export default function SadarPanelScreen() {
     return code.includes(q) || head.includes(q) || house.includes(q) || ward.includes(q);
   });
 
+  // Filtered Usthadhs and Members for Usthadh Search
+  const filteredTeachers = teachers.filter((t) => {
+    const q = usthadhSearchQuery.toLowerCase();
+    const name = t.memberId?.name?.toLowerCase() || t.name?.toLowerCase() || '';
+    const phone = t.memberId?.phone?.toLowerCase() || t.phone?.toLowerCase() || '';
+    return name.includes(q) || phone.includes(q);
+  });
+
+  const filteredMembers = members.filter((m) => {
+    const q = usthadhSearchQuery.toLowerCase();
+    const name = m.name?.toLowerCase() || '';
+    const phone = m.phone?.toLowerCase() || '';
+    const isAlreadyTeacher = teachers.some((t) => (t.memberId?._id || t.memberId) === m._id);
+    return !isAlreadyTeacher && (name.includes(q) || phone.includes(q));
+  });
+
   // Quick enroll family members fetcher
   const handleSelectQuickFamily = async (fam: any) => {
     setEnrollFamilyId(fam._id);
@@ -279,7 +359,6 @@ export default function SadarPanelScreen() {
 
     try {
       setFetchingEnrollMembers(true);
-      // Fetch full family details with members populated
       const res = await apiClient.get(`/families/${fam._id}`);
       const famData = res.data?.data;
       setEnrollFamilyMembers(famData?.members || fam.members || []);
@@ -336,6 +415,10 @@ export default function SadarPanelScreen() {
       setActionLoading(false);
     }
   };
+
+  const assignedUsthadhName =
+    teachers.find((t) => t._id === newClassTeacherId)?.memberId?.name ||
+    teachers.find((t) => t._id === newClassTeacherId)?.name;
 
   if (fetchingData) {
     return (
@@ -447,7 +530,7 @@ export default function SadarPanelScreen() {
               <Ionicons name="book-outline" size={44} color="#94a3b8" />
               <Text style={{ fontSize: 16, fontWeight: '800', color: TEAL_DARK, marginTop: 12 }}>No Classes Created</Text>
               <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginTop: 4, marginBottom: 16 }}>
-                Create your first Madrasa class, assign an Usthadh, and enroll students.
+                Create your first Madrasa class, assign an Usthadh from members, and enroll students.
               </Text>
               <TouchableOpacity
                 onPress={() => setShowCreateClassModal(true)}
@@ -700,7 +783,12 @@ export default function SadarPanelScreen() {
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <Text style={{ fontSize: 13, fontWeight: '800', color: TEAL_DARK }}>Class Usthadh (ക്ലാസ് ഉസ്താദ്)</Text>
                   <TouchableOpacity
-                    onPress={() => setShowUsthadhModal(true)}
+                    onPress={() => {
+                      setUsthadhPickerMode('change_class_usthadh');
+                      setUsthadhSearchQuery('');
+                      setUsthadhSubTab('search');
+                      setShowUsthadhPickerModal(true);
+                    }}
                     style={{ backgroundColor: '#ecfdf5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 }}
                   >
                     <Text style={{ color: TEAL, fontWeight: '800', fontSize: 11 }}>
@@ -839,32 +927,44 @@ export default function SadarPanelScreen() {
                 </View>
               </View>
 
+              {/* Usthadh Selection Field */}
               <View>
-                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>Assign Usthadh (ഉസ്താദ്)</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', gap: 8 }}>
-                  {teachers.map((t) => {
-                    const isSelected = newClassTeacherId === t._id;
-                    return (
-                      <TouchableOpacity
-                        key={t._id}
-                        onPress={() => setNewClassTeacherId(isSelected ? '' : t._id)}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 8,
-                          borderRadius: 12,
-                          borderWidth: 1.5,
-                          borderColor: isSelected ? TEAL : '#e2e8f0',
-                          backgroundColor: isSelected ? '#f0fdf4' : '#f8fafc',
-                          marginRight: 6,
-                        }}
-                      >
-                        <Text style={{ fontSize: 12, fontWeight: '800', color: isSelected ? TEAL : '#0f172a' }}>
-                          {t.memberId?.name || t.name || 'Usthadh'}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                  Assign Class Usthadh (ഉസ്താദിനെ തിരഞ്ഞെടുക്കുക)
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setUsthadhPickerMode('create_class');
+                    setUsthadhSearchQuery('');
+                    setUsthadhSubTab('search');
+                    setShowUsthadhPickerModal(true);
+                  }}
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    borderWidth: 1.5,
+                    borderColor: newClassTeacherId ? TEAL : '#e2e8f0',
+                    borderRadius: 12,
+                    padding: 12,
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ color: newClassTeacherId ? '#0f172a' : '#94a3b8', fontSize: 14, fontWeight: newClassTeacherId ? '800' : 'normal' }}>
+                    {assignedUsthadhName ? `Usthadh: ${assignedUsthadhName}` : '🔍 Search Members or Add New Usthadh'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color={TEAL} />
+                </TouchableOpacity>
+              </View>
+
+              <View>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>Subjects (വിഷയങ്ങൾ)</Text>
+                <TextInput
+                  placeholder="Quran, Fiqh, Arabic, Thareekh"
+                  value={newClassSubjects}
+                  onChangeText={setNewClassSubjects}
+                  style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                />
               </View>
 
               <TouchableOpacity
@@ -872,7 +972,7 @@ export default function SadarPanelScreen() {
                 disabled={actionLoading}
                 style={{ backgroundColor: TEAL, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 10 }}
               >
-                {actionLoading ? <ActivityIndicator color="white" /> : <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>Create Class</Text>}
+                {actionLoading ? <ActivityIndicator color="white" /> : <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>Create Class (ക്ലാസ് ചേർക്കുക)</Text>}
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -880,55 +980,235 @@ export default function SadarPanelScreen() {
       </Modal>
 
       {/* ========================================================================= */}
-      {/* MODAL: ASSIGN / CHANGE USTHADH */}
+      {/* UNIFIED MODAL: SEARCH USTHADHS / MEMBERS & ADD NEW USTHADH */}
       {/* ========================================================================= */}
-      <Modal visible={showUsthadhModal} animationType="slide" transparent>
+      <Modal visible={showUsthadhPickerModal} animationType="slide" transparent>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: '80%' }}>
+          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28, height: '85%', padding: 20 }}>
+            {/* Header */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottomWidth: 1, borderColor: '#f1ebd9' }}>
-              <Text style={{ fontSize: 18, fontWeight: '900', color: TEAL_DARK }}>Assign Class Usthadh</Text>
-              <TouchableOpacity onPress={() => setShowUsthadhModal(false)}>
+              <Text style={{ fontSize: 17, fontWeight: '900', color: TEAL_DARK }}>Choose / Add Usthadh</Text>
+              <TouchableOpacity onPress={() => setShowUsthadhPickerModal(false)}>
                 <Ionicons name="close" size={20} color="#64748b" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ paddingVertical: 14, gap: 10 }}>
-              {teachers.map((t) => {
-                const isSelected = selectedUsthadhId === t._id;
-                return (
+            {/* Sub-tab Switcher */}
+            <View style={{ flexDirection: 'row', gap: 8, marginVertical: 12 }}>
+              <TouchableOpacity
+                onPress={() => setUsthadhSubTab('search')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  backgroundColor: usthadhSubTab === 'search' ? TEAL : '#f1f5f9',
+                }}
+              >
+                <Text style={{ color: usthadhSubTab === 'search' ? 'white' : '#64748b', fontWeight: '800', fontSize: 12 }}>
+                  🔍 Search Usthadhs & Members
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setUsthadhSubTab('new')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  backgroundColor: usthadhSubTab === 'new' ? TEAL : '#f1f5f9',
+                }}
+              >
+                <Text style={{ color: usthadhSubTab === 'new' ? 'white' : '#64748b', fontWeight: '800', fontSize: 12 }}>
+                  + Add New Usthadh
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* SUB-TAB 1: SEARCH USTHADHS & MEMBERS */}
+            {usthadhSubTab === 'search' && (
+              <ScrollView contentContainerStyle={{ gap: 10 }}>
+                <TextInput
+                  placeholder="Search Usthadh or Member by name or phone..."
+                  value={usthadhSearchQuery}
+                  onChangeText={setUsthadhSearchQuery}
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    borderWidth: 1,
+                    borderColor: '#e2e8f0',
+                    borderRadius: 12,
+                    padding: 10,
+                    fontSize: 13,
+                    color: '#0f172a',
+                    marginBottom: 6,
+                  }}
+                />
+
+                {/* Section 1: Registered Teachers */}
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginTop: 4 }}>
+                  Registered Usthadhs ({filteredTeachers.length})
+                </Text>
+                {filteredTeachers.length === 0 ? (
+                  <Text style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', paddingLeft: 4 }}>
+                    No registered teachers matching search.
+                  </Text>
+                ) : (
+                  filteredTeachers.map((t) => (
+                    <TouchableOpacity
+                      key={t._id}
+                      onPress={() =>
+                        handleSelectUsthadh({
+                          teacherId: t._id,
+                          name: t.memberId?.name || t.name,
+                          phone: t.memberId?.phone || t.phone,
+                        })
+                      }
+                      style={{
+                        padding: 12,
+                        borderRadius: 12,
+                        backgroundColor: '#f0fdf4',
+                        borderWidth: 1,
+                        borderColor: '#bbf7d0',
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <View>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>
+                          {t.memberId?.name || t.name || 'Usthadh'}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: '#64748b' }}>
+                          {t.qualification || 'Teacher'} {t.memberId?.phone ? `• 📞 ${t.memberId.phone}` : ''}
+                        </Text>
+                      </View>
+                      <View style={{ backgroundColor: TEAL, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                        <Text style={{ color: 'white', fontWeight: '800', fontSize: 10 }}>Select</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                )}
+
+                {/* Section 2: Mahallu Members (can be selected as Usthadh) */}
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginTop: 12 }}>
+                  Or Choose from Mahallu Members ({filteredMembers.slice(0, 15).length})
+                </Text>
+                {filteredMembers.slice(0, 15).map((m) => (
                   <TouchableOpacity
-                    key={t._id}
-                    onPress={() => setSelectedUsthadhId(t._id)}
+                    key={m._id}
+                    onPress={() =>
+                      handleSelectUsthadh({
+                        memberId: m._id,
+                        name: m.name,
+                        phone: m.phone,
+                      })
+                    }
                     style={{
-                      padding: 14,
-                      borderRadius: 14,
-                      borderWidth: 1.5,
-                      borderColor: isSelected ? TEAL : '#e2e8f0',
-                      backgroundColor: isSelected ? '#f0fdf4' : '#f8fafc',
+                      padding: 12,
+                      borderRadius: 12,
+                      backgroundColor: '#f8fafc',
+                      borderWidth: 1,
+                      borderColor: '#e2e8f0',
                       flexDirection: 'row',
                       justifyContent: 'space-between',
                       alignItems: 'center',
                     }}
                   >
                     <View>
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: '#0f172a' }}>{t.memberId?.name || t.name}</Text>
-                      <Text style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>
-                        {t.qualification || 'Teacher'} {t.memberId?.phone ? `• 📞 ${t.memberId.phone}` : ''}
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>{m.name}</Text>
+                      <Text style={{ fontSize: 11, color: '#64748b' }}>
+                        Member {m.phone ? `• 📞 ${m.phone}` : ''}
                       </Text>
                     </View>
-                    {isSelected && <Ionicons name="checkmark-circle" size={22} color={TEAL} />}
+                    <View style={{ backgroundColor: '#e2e8f0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                      <Text style={{ color: '#334155', fontWeight: '800', fontSize: 10 }}>Make Usthadh</Text>
+                    </View>
                   </TouchableOpacity>
-                );
-              })}
+                ))}
 
-              <TouchableOpacity
-                onPress={handleAssignUsthadh}
-                disabled={actionLoading}
-                style={{ backgroundColor: TEAL, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 10 }}
-              >
-                {actionLoading ? <ActivityIndicator color="white" /> : <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>Save Usthadh</Text>}
-              </TouchableOpacity>
-            </ScrollView>
+                {/* Prompt to create new if not found */}
+                <TouchableOpacity
+                  onPress={() => setUsthadhSubTab('new')}
+                  style={{
+                    padding: 14,
+                    borderRadius: 14,
+                    borderWidth: 1.5,
+                    borderColor: TEAL,
+                    borderStyle: 'dashed',
+                    alignItems: 'center',
+                    marginTop: 10,
+                    marginBottom: 20,
+                  }}
+                >
+                  <Text style={{ color: TEAL, fontWeight: '800', fontSize: 13 }}>
+                    + Usthadh not in list? Add New Usthadh Here
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            {/* SUB-TAB 2: ADD NEW USTHADH */}
+            {usthadhSubTab === 'new' && (
+              <ScrollView contentContainerStyle={{ gap: 12, paddingVertical: 6 }}>
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Usthadh Full Name (ഉസ്താദിന്റെ പേര്) *
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. Usthadh Mohammed Faizy"
+                    value={newUsthadhName}
+                    onChangeText={setNewUsthadhName}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Phone Number (ഫോൺ നമ്പർ)
+                  </Text>
+                  <TextInput
+                    placeholder="+91 9876543210"
+                    keyboardType="phone-pad"
+                    value={newUsthadhPhone}
+                    onChangeText={setNewUsthadhPhone}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Sanad / Qualification (യോഗ്യത)
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. Faizy, Alim, Hafiz, Baqavi"
+                    value={newUsthadhQualification}
+                    onChangeText={setNewUsthadhQualification}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  onPress={handleCreateNewUsthadh}
+                  disabled={actionLoading}
+                  style={{
+                    backgroundColor: TEAL,
+                    padding: 15,
+                    borderRadius: 14,
+                    alignItems: 'center',
+                    marginTop: 14,
+                  }}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>
+                      Create & Select Usthadh (ഉസ്താദിനെ ചേർക്കുക)
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
           </View>
         </View>
       </Modal>
