@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +19,7 @@ import { apiClient, baseOrigin } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
 import { useLanguageStore } from '../../lib/store/languageStore';
 import { t } from '../../lib/i18n';
+import { colors } from '../../lib/theme';
 
 const PRESET_AMOUNTS = [50, 100, 250, 500, 1000, 2500];
 
@@ -57,7 +59,7 @@ export default function SadaqahScreen() {
   });
 
   const sadaqahHistory = Array.isArray(memberPayments) ? memberPayments : [];
-  const processedParamRef = React.useRef<string | null>(null);
+  const processedParamRef = useRef<string | null>(null);
 
   // Handle return from Razorpay Payment Gateway Redirect
   useEffect(() => {
@@ -93,7 +95,6 @@ export default function SadaqahScreen() {
       setIsProcessing(true);
 
       if (gateway === 'cash') {
-        // Record as manual receipt for cash
         const res = await apiClient.post('/receipts/manual', {
           type: 'donation',
           amount: finalAmount,
@@ -149,56 +150,49 @@ export default function SadaqahScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
-      <View className="px-5 py-4 bg-white border-b border-slate-200 flex-row items-center justify-between shadow-sm">
-        <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2 rounded-xl">
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#0f172a" />
         </TouchableOpacity>
-        <View className="items-center">
-          <Text className="text-slate-900 text-lg font-extrabold">{t('sadaqahTitle', language)}</Text>
-          <Text className="text-slate-500 text-xs font-semibold">{t('voluntaryCharity', language)}</Text>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>{t('sadaqahTitle', language)}</Text>
+          <Text style={styles.headerSubtitle}>{t('voluntaryCharity', language)}</Text>
         </View>
-        <View className="w-8" />
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView className="flex-1 p-5" showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Banner */}
-        <View className="bg-gradient-to-r from-emerald-700 to-teal-800 p-5 rounded-3xl mb-6 shadow-md shadow-emerald-700/20 bg-emerald-700">
-          <View className="flex-row items-center mb-2">
-            <View className="w-8 h-8 rounded-full bg-emerald-600/80 items-center justify-center mr-2 border border-emerald-400/30">
+        <View style={styles.banner}>
+          <View style={styles.bannerHeader}>
+            <View style={styles.bannerIconCircle}>
               <Ionicons name="heart" size={18} color="#ffffff" />
             </View>
-            <Text className="text-emerald-100 text-xs font-bold uppercase tracking-wider">
-              {t('nobleDeed', language)}
-            </Text>
+            <Text style={styles.bannerTag}>{t('nobleDeed', language)}</Text>
           </View>
-          <Text className="text-white text-xl font-extrabold">{t('sadaqahHadithTitle', language)}</Text>
-          <Text className="text-emerald-100 text-xs mt-1 leading-relaxed">
-            {t('sadaqahHadithDesc', language)}
-          </Text>
+          <Text style={styles.bannerTitle}>{t('sadaqahHadithTitle', language)}</Text>
+          <Text style={styles.bannerDesc}>{t('sadaqahHadithDesc', language)}</Text>
         </View>
 
         {/* Amount Selector */}
-        <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">{t('selectAmount', language)}</Text>
-          <View className="flex-row flex-wrap gap-2.5 mb-4">
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('selectAmount', language)}</Text>
+          <View style={styles.presetGrid}>
             {PRESET_AMOUNTS.map((amt) => {
               const isSelected = selectedAmount === amt && !customAmount;
               return (
                 <TouchableOpacity
                   key={amt}
+                  activeOpacity={0.7}
                   onPress={() => {
                     setSelectedAmount(amt);
                     setCustomAmount('');
                   }}
-                  className={`px-4 py-3 rounded-2xl border items-center justify-center min-w-[75px] ${
-                    isSelected
-                      ? 'bg-emerald-600 border-emerald-600 shadow-sm shadow-emerald-600/30'
-                      : 'bg-slate-50 border-slate-200'
-                  }`}
+                  style={[styles.presetBtn, isSelected ? styles.presetBtnActive : styles.presetBtnInactive]}
                 >
-                  <Text className={`font-extrabold text-sm ${isSelected ? 'text-white' : 'text-slate-700'}`}>
+                  <Text style={[styles.presetBtnText, isSelected ? styles.presetBtnTextActive : styles.presetBtnTextInactive]}>
                     ₹{amt}
                   </Text>
                 </TouchableOpacity>
@@ -207,52 +201,44 @@ export default function SadaqahScreen() {
           </View>
 
           {/* Custom Amount Input */}
-          <Text className="text-slate-500 font-semibold text-xs mb-1.5">{t('customAmount', language)}</Text>
-          <View className="flex-row items-center border border-slate-200 rounded-2xl px-4 py-3 bg-slate-50">
-            <Text className="text-slate-500 font-bold text-base mr-2">₹</Text>
+          <Text style={styles.inputLabel}>{t('customAmount', language)}</Text>
+          <View style={styles.inputRow}>
+            <Text style={styles.currencySymbol}>₹</Text>
             <TextInput
               placeholder="e.g. 5000"
+              placeholderTextColor="#94a3b8"
               keyboardType="numeric"
               value={customAmount}
               onChangeText={(text) => {
                 setCustomAmount(text);
                 setSelectedAmount(null);
               }}
-              className="flex-1 font-bold text-base text-slate-900"
+              style={styles.textInput}
             />
           </View>
         </View>
 
         {/* Category Selector */}
-        <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">{t('selectCategory', language)}</Text>
-          <View className="gap-2">
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('selectCategory', language)}</Text>
+          <View style={styles.categoryList}>
             {SADAQAH_CATEGORIES.map((cat) => {
               const isSelected = category === cat.id;
               return (
                 <TouchableOpacity
                   key={cat.id}
+                  activeOpacity={0.7}
                   onPress={() => setCategory(cat.id)}
-                  className={`flex-row items-center p-3.5 rounded-2xl border ${
-                    isSelected ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-100'
-                  }`}
+                  style={[styles.categoryItem, isSelected ? styles.categoryItemActive : styles.categoryItemInactive]}
                 >
-                  <View
-                    className={`w-8 h-8 rounded-xl items-center justify-center mr-3 ${
-                      isSelected ? 'bg-emerald-600' : 'bg-slate-200'
-                    }`}
-                  >
+                  <View style={[styles.categoryIconCircle, isSelected ? styles.categoryIconCircleActive : styles.categoryIconCircleInactive]}>
                     <Ionicons
                       name={cat.icon as any}
                       size={16}
                       color={isSelected ? '#ffffff' : '#64748b'}
                     />
                   </View>
-                  <Text
-                    className={`flex-1 text-xs font-bold ${
-                      isSelected ? 'text-emerald-950 font-extrabold' : 'text-slate-700'
-                    }`}
-                  >
+                  <Text style={[styles.categoryLabel, isSelected ? styles.categoryLabelActive : styles.categoryLabelInactive]}>
                     {cat.label}
                   </Text>
                   {isSelected && <Ionicons name="checkmark-circle" size={18} color="#059669" />}
@@ -263,21 +249,22 @@ export default function SadaqahScreen() {
         </View>
 
         {/* Description / Notes */}
-        <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-2">{t('optionalNote', language)}</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('optionalNote', language)}</Text>
           <TextInput
             placeholder={language === 'en' ? 'e.g. For family wellbeing / Esaal-e-Sawab...' : 'ഉദാഹരണത്തിന്: കുടുംബത്തിന് വേണ്ടി / ഈസാൽ-എ-സവാബ്...'}
+            placeholderTextColor="#94a3b8"
             value={description}
             onChangeText={setDescription}
-            className="border border-slate-200 rounded-2xl px-4 py-3 text-sm bg-slate-50 text-slate-900"
+            style={styles.textArea}
             multiline
           />
         </View>
 
         {/* Payment Method */}
-        <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-6 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">{t('paymentMethod', language)}</Text>
-          <View className="flex-row gap-3">
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('paymentMethod', language)}</Text>
+          <View style={styles.methodRow}>
             {[
               { id: 'razorpay', label: t('onlinePayment', language), icon: 'qr-code-outline' },
               { id: 'cash', label: t('cashInHand', language), icon: 'cash-outline' },
@@ -286,15 +273,12 @@ export default function SadaqahScreen() {
               return (
                 <TouchableOpacity
                   key={m.id}
+                  activeOpacity={0.7}
                   onPress={() => setGateway(m.id as any)}
-                  className={`flex-1 p-3 rounded-2xl border items-center ${
-                    isSelected
-                      ? 'bg-emerald-50 border-emerald-500'
-                      : 'bg-slate-50 border-slate-100'
-                  }`}
+                  style={[styles.methodBtn, isSelected ? styles.methodBtnActive : styles.methodBtnInactive]}
                 >
                   <Ionicons name={m.icon as any} size={20} color={isSelected ? '#059669' : '#64748b'} />
-                  <Text className={`text-[11px] font-bold mt-1 text-center ${isSelected ? 'text-emerald-900' : 'text-slate-600'}`}>
+                  <Text style={[styles.methodLabel, isSelected ? styles.methodLabelActive : styles.methodLabelInactive]}>
                     {m.label}
                   </Text>
                 </TouchableOpacity>
@@ -308,43 +292,40 @@ export default function SadaqahScreen() {
           activeOpacity={0.8}
           onPress={handlePaySadaqah}
           disabled={isProcessing}
-          className="bg-emerald-600 py-4 rounded-2xl items-center shadow-lg shadow-emerald-600/30 mb-8 flex-row justify-center"
+          style={styles.payBtn}
         >
           {isProcessing ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <>
+            <View style={styles.payBtnContent}>
               <Ionicons name="card-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-              <Text className="text-white text-base font-extrabold">
+              <Text style={styles.payBtnText}>
                 {gateway === 'razorpay' ? `${t('proceedToRazorpay', language)}: ₹` : `${t('payCash', language)}: ₹`}{finalAmount || 0}
               </Text>
-            </>
+            </View>
           )}
         </TouchableOpacity>
 
         {/* History Section */}
-        <View className="mb-12">
-          <Text className="text-slate-900 font-extrabold text-base mb-3">{t('pastSadaqah', language)}</Text>
+        <View style={styles.historySection}>
+          <Text style={styles.historyTitle}>{t('pastSadaqah', language)}</Text>
           {isLoading ? (
-            <ActivityIndicator color="#059669" className="py-6" />
+            <ActivityIndicator color="#059669" style={{ paddingVertical: 24 }} />
           ) : sadaqahHistory.length === 0 ? (
-            <View className="bg-white border border-slate-200 rounded-3xl p-6 items-center">
+            <View style={styles.emptyHistory}>
               <Ionicons name="receipt-outline" size={32} color="#cbd5e1" />
-              <Text className="text-slate-500 text-xs font-semibold mt-2">{t('noRecentContributions', language)}</Text>
+              <Text style={styles.emptyHistoryText}>{t('noRecentContributions', language)}</Text>
             </View>
           ) : (
-            <View className="gap-2.5">
+            <View style={styles.historyList}>
               {sadaqahHistory.map((item: any, i: number) => (
-                <View
-                  key={item._id || i}
-                  className="bg-white border border-slate-200 rounded-2xl p-4 flex-row items-center justify-between"
-                >
-                  <View className="flex-1 mr-3">
-                    <Text className="text-slate-900 font-bold text-sm">
+                <View key={item._id || i} style={styles.historyCard}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={styles.historyReceiptNo}>
                       {item.receiptNo || 'RCP-SADAQAH'}
                     </Text>
-                    <Text className="text-slate-500 text-xs">{item.description || 'General Sadaqah'}</Text>
-                    <Text className="text-slate-400 text-[10px] mt-0.5">
+                    <Text style={styles.historyDesc}>{item.description || 'General Sadaqah'}</Text>
+                    <Text style={styles.historyDate}>
                       {new Date(item.createdAt).toLocaleDateString('en-IN', {
                         day: 'numeric',
                         month: 'short',
@@ -352,11 +333,13 @@ export default function SadaqahScreen() {
                       })}
                     </Text>
                   </View>
-                  <View className="items-end">
-                    <Text className="text-emerald-700 font-extrabold text-base">₹{item.amount}</Text>
-                    <Text className="text-emerald-600 text-[10px] font-bold uppercase bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 mt-0.5">
-                      {item.status || 'PAID'}
-                    </Text>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.historyAmount}>₹{item.amount}</Text>
+                    <View style={styles.historyStatusBadge}>
+                      <Text style={styles.historyStatusText}>
+                        {item.status || 'PAID'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               ))}
@@ -367,36 +350,38 @@ export default function SadaqahScreen() {
 
       {/* Success Receipt Modal */}
       <Modal visible={!!successReceipt} transparent animationType="fade">
-        <View className="flex-1 bg-black/60 items-center justify-center p-5">
-          <View className="bg-white rounded-3xl p-6 w-full max-w-sm items-center shadow-2xl">
-            <View className="w-16 h-16 rounded-full bg-emerald-100 items-center justify-center mb-4">
+        <View style={styles.modalOverlay}>
+          <View style={styles.receiptCard}>
+            <View style={styles.receiptIconCircle}>
               <Ionicons name="checkmark-circle" size={42} color="#059669" />
             </View>
-            <Text className="text-slate-900 text-xl font-extrabold mb-1">Jazakallah Khair!</Text>
-            <Text className="text-slate-500 text-xs text-center mb-5">
+            <Text style={styles.receiptHeading}>Jazakallah Khair!</Text>
+            <Text style={styles.receiptSubheading}>
               Your Sadaqah contribution of ₹{successReceipt?.amount} has been received successfully.
             </Text>
 
-            <View className="bg-slate-50 rounded-2xl p-4 w-full border border-slate-100 mb-6">
-              <View className="flex-row justify-between mb-2">
-                <Text className="text-slate-400 text-xs">Receipt No:</Text>
-                <Text className="text-slate-800 font-bold text-xs">{successReceipt?.receiptNo}</Text>
+            <View style={styles.receiptDetails}>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Receipt No:</Text>
+                <Text style={styles.receiptValue}>{successReceipt?.receiptNo}</Text>
               </View>
-              <View className="flex-row justify-between mb-2">
-                <Text className="text-slate-400 text-xs">Purpose:</Text>
-                <Text className="text-slate-800 font-bold text-xs">{successReceipt?.category}</Text>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Purpose:</Text>
+                <Text style={styles.receiptValue}>{successReceipt?.category}</Text>
               </View>
-              <View className="flex-row justify-between">
-                <Text className="text-slate-400 text-xs">Amount Paid:</Text>
-                <Text className="text-emerald-700 font-extrabold text-sm">₹{successReceipt?.amount}</Text>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Amount Paid:</Text>
+                <Text style={[styles.receiptValue, { color: '#059669', fontSize: 15, fontWeight: '900' }]}>
+                  ₹{successReceipt?.amount}
+                </Text>
               </View>
             </View>
 
             <TouchableOpacity
               onPress={() => setSuccessReceipt(null)}
-              className="bg-emerald-600 w-full py-3.5 rounded-2xl items-center shadow-md shadow-emerald-600/30"
+              style={styles.doneBtn}
             >
-              <Text className="text-white font-extrabold text-sm">Done</Text>
+              <Text style={styles.doneBtnText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -404,3 +389,430 @@ export default function SadaqahScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backBtn: {
+    padding: 8,
+    marginLeft: -8,
+    borderRadius: 12,
+  },
+  headerTextContainer: {
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  banner: {
+    backgroundColor: '#047857',
+    padding: 20,
+    borderRadius: 24,
+    marginBottom: 20,
+    shadowColor: '#047857',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  bannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  bannerIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  bannerTag: {
+    color: '#D1FAE5',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  bannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  bannerDesc: {
+    color: '#ECFDF5',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 18,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 12,
+  },
+  presetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 16,
+  },
+  presetBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 78,
+  },
+  presetBtnActive: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  presetBtnInactive: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  presetBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  presetBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  presetBtnTextInactive: {
+    color: '#334155',
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 6,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#F8FAFC',
+  },
+  currencySymbol: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#64748B',
+    marginRight: 8,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    padding: 0,
+  },
+  categoryList: {
+    gap: 10,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  categoryItemActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  categoryItemInactive: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#F1F5F9',
+  },
+  categoryIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  categoryIconCircleActive: {
+    backgroundColor: '#059669',
+  },
+  categoryIconCircleInactive: {
+    backgroundColor: '#E2E8F0',
+  },
+  categoryLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  categoryLabelActive: {
+    color: '#064E3B',
+    fontWeight: '900',
+  },
+  categoryLabelInactive: {
+    color: '#334155',
+  },
+  textArea: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 13,
+    backgroundColor: '#F8FAFC',
+    color: '#0F172A',
+    minHeight: 50,
+  },
+  methodRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  methodBtn: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  methodBtnActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  methodBtnInactive: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  methodLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  methodLabelActive: {
+    color: '#064E3B',
+  },
+  methodLabelInactive: {
+    color: '#64748B',
+  },
+  payBtn: {
+    backgroundColor: '#059669',
+    paddingVertical: 16,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 28,
+    shadowColor: '#059669',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  payBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  payBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  historySection: {
+    marginBottom: 40,
+  },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 14,
+  },
+  emptyHistory: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyHistoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 8,
+  },
+  historyList: {
+    gap: 10,
+  },
+  historyCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  historyReceiptNo: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  historyDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  historyDate: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  historyAmount: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#047857',
+  },
+  historyStatusBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginTop: 4,
+  },
+  historyStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#047857',
+    textTransform: 'uppercase',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  receiptCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  receiptIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  receiptHeading: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  receiptSubheading: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  receiptDetails: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    padding: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    marginBottom: 24,
+    gap: 8,
+  },
+  receiptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  receiptLabel: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  receiptValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  doneBtn: {
+    backgroundColor: '#059669',
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#059669',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  doneBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+});
