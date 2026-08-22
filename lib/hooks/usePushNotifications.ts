@@ -71,8 +71,21 @@ export function usePushNotifications() {
       }
     });
 
+    // 4. Handle user tapping on system notification
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      try {
+        const data = response?.notification?.request?.content?.data;
+        if (data?.url) {
+          // If custom URL specified
+        }
+      } catch (err) {
+        console.warn('[Push] Error handling notification tap:', err);
+      }
+    });
+
     return () => {
       socket.disconnect();
+      responseSubscription.remove();
     };
   }, [user, isAuthenticated]);
 }
