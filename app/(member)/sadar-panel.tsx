@@ -226,6 +226,10 @@ export default function SadarPanelScreen() {
       const newTeacher = res.data?.data;
       const newTeacherId = newTeacher?._id;
 
+      if (newTeacher) {
+        setTeachers((prev) => [newTeacher, ...prev]);
+      }
+
       Alert.alert(
         'Success 🎉',
         `Usthadh ${newUsthadhName} created!\nLogin ID: ${newUsthadhEmail.trim() || newUsthadhPhone.trim() || 'Auto'}\nPassword: ${newUsthadhPassword.trim() || 'Usthadh@123456'}`
@@ -234,8 +238,8 @@ export default function SadarPanelScreen() {
       setNewUsthadhEmail('');
       setNewUsthadhPassword('');
       setNewUsthadhPhone('');
+      setUsthadhSubTab('search');
       setShowUsthadhPickerModal(false);
-      await loadData();
 
       if (usthadhPickerMode === 'create_class') {
         setNewClassTeacherId(newTeacherId);
@@ -243,6 +247,7 @@ export default function SadarPanelScreen() {
         await apiClient.put(`/classes/${selectedClass._id}`, { teacherId: newTeacherId });
         setSelectedClass((prev: any) => ({ ...prev, teacherId: newTeacher }));
       }
+      await loadData();
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.message || 'Failed to create new Usthadh');
     } finally {
