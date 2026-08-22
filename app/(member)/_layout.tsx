@@ -55,6 +55,7 @@ export default function MemberLayout() {
       
       {/* Screens that should be hidden from bottom tab bar but part of the router */}
       <Tabs.Screen name="payments" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="payment-history" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="children" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="family-students" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="notifications" options={{ href: null, tabBarStyle: { display: 'none' } }} />

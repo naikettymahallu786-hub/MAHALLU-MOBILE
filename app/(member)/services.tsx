@@ -32,6 +32,18 @@ export default function ServicesScreen() {
       tag: 'FINANCE',
     },
     {
+      id: 'payment-history',
+      category: 'finance',
+      categoryTitle: t('financeAndDues', language),
+      title: language === 'en' ? 'Payment & Receipt History' : 'പേയ്‌മെന്റുകളും രസീതുകളും',
+      desc: language === 'en' ? 'Search, filter, export & download receipts' : 'എല്ലാ പേയ്‌മെന്റുകളും ഡൗൺലോഡ് ചെയ്യുക',
+      route: '/(member)/payment-history',
+      icon: 'receipt' as const,
+      color: '#0D9488',
+      bg: '#F0FDFA',
+      tag: 'RECEIPTS',
+    },
+    {
       id: 'sadaqah',
       category: 'finance',
       categoryTitle: t('financeAndDues', language),

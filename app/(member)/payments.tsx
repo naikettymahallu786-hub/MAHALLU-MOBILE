@@ -236,7 +236,18 @@ export default function PaymentsScreen() {
           )}
 
           {/* Payment History */}
-          <Text className="text-slate-800 text-sm font-bold mb-3 px-1">{t('recentPayments', language)}</Text>
+          <View className="flex-row items-center justify-between mb-3 px-1">
+            <Text className="text-slate-800 text-sm font-bold">{t('recentPayments', language)}</Text>
+            <TouchableOpacity
+              onPress={() => router.push('/(member)/payment-history')}
+              className="flex-row items-center"
+            >
+              <Text className="text-xs font-bold text-teal-800 mr-1">
+                {language === 'en' ? 'View All & Filter' : 'എല്ലാം കാണുക'}
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color="#0F6B5C" />
+            </TouchableOpacity>
+          </View>
           
           {payments.length === 0 ? (
             <View className="bg-white rounded-[24px] p-8 items-center border border-slate-100">
