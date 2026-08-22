@@ -18,6 +18,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, baseOrigin } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
 import { useLanguageStore } from '../../lib/store/languageStore';
+import { generateAndShareReceipt } from '../../lib/services/receiptDownloadService';
 import { t } from '../../lib/i18n';
 import { colors } from '../../lib/theme';
 
@@ -318,31 +319,54 @@ export default function SadaqahScreen() {
             </View>
           ) : (
             <View style={styles.historyList}>
-              {sadaqahHistory.map((item: any, i: number) => (
-                <View key={item._id || i} style={styles.historyCard}>
-                  <View style={{ flex: 1, marginRight: 12 }}>
-                    <Text style={styles.historyReceiptNo}>
-                      {item.receiptNo || 'RCP-SADAQAH'}
-                    </Text>
-                    <Text style={styles.historyDesc}>{item.description || 'General Sadaqah'}</Text>
-                    <Text style={styles.historyDate}>
-                      {new Date(item.createdAt).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.historyAmount}>₹{item.amount}</Text>
-                    <View style={styles.historyStatusBadge}>
-                      <Text style={styles.historyStatusText}>
-                        {item.status || 'PAID'}
+              {sadaqahHistory.map((item: any, i: number) => {
+                const rNo = item.receiptNo || `RCP-${String(item._id).slice(-6).toUpperCase()}`;
+                return (
+                  <View key={item._id || i} style={styles.historyCard}>
+                    <View style={{ flex: 1, marginRight: 12 }}>
+                      <Text style={styles.historyReceiptNo}>{rNo}</Text>
+                      <Text style={styles.historyDesc}>{item.description || 'General Sadaqah'}</Text>
+                      <Text style={styles.historyDate}>
+                        {new Date(item.createdAt).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
                       </Text>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          generateAndShareReceipt({
+                            receiptNo: rNo,
+                            paymentNo: item.paymentNo,
+                            payerName: item.payerName || user?.name || 'Mahallu Member',
+                            payerPhone: item.payerPhone || user?.phone || '',
+                            amount: item.amount,
+                            category: item.category || 'General Sadaqah',
+                            gateway: item.gateway,
+                            date: item.createdAt,
+                            description: item.description,
+                          });
+                        }}
+                        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}
+                      >
+                        <Ionicons name="download-outline" size={14} color="#059669" />
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#059669', marginLeft: 4 }}>
+                          {language === 'en' ? 'Download Receipt PDF' : 'രസീത് ഡൗൺലോഡ് (PDF)'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.historyAmount}>₹{item.amount}</Text>
+                      <View style={styles.historyStatusBadge}>
+                        <Text style={styles.historyStatusText}>
+                          {item.status || 'PAID'}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>
@@ -376,6 +400,38 @@ export default function SadaqahScreen() {
                 </Text>
               </View>
             </View>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                generateAndShareReceipt({
+                  receiptNo: successReceipt?.receiptNo || 'RCP-SADAQAH',
+                  payerName: user?.name || 'Mahallu Member',
+                  payerPhone: user?.phone || '',
+                  amount: successReceipt?.amount || 0,
+                  category: successReceipt?.category,
+                  date: new Date(),
+                  description: description,
+                });
+              }}
+              style={{
+                backgroundColor: '#ECFDF5',
+                borderWidth: 1.5,
+                borderColor: '#A7F3D0',
+                width: '100%',
+                paddingVertical: 12,
+                borderRadius: 16,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                marginBottom: 10,
+              }}
+            >
+              <Ionicons name="download-outline" size={18} color="#059669" style={{ marginRight: 6 }} />
+              <Text style={{ color: '#047857', fontWeight: '900', fontSize: 14 }}>
+                {language === 'en' ? 'Download Official Receipt (PDF)' : 'ഔദ്യോഗിക രസീത് ഡൗൺലോഡ് (PDF)'}
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => setSuccessReceipt(null)}

@@ -13,6 +13,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as Linking from 'expo-linking';
 import { apiClient, baseOrigin } from '../../lib/api';
 import { useLanguageStore } from '../../lib/store/languageStore';
+import { useAuthStore } from '../../store/auth.store';
+import { generateAndShareReceipt } from '../../lib/services/receiptDownloadService';
 import { t } from '../../lib/i18n';
 
 const TEAL_DARK = '#0B4A42';
@@ -23,6 +25,7 @@ const CREAM = '#FBF8F2';
 export default function PaymentsScreen() {
   const router = useRouter();
   const { language } = useLanguageStore();
+  const { user } = useAuthStore();
   const params = useGlobalSearchParams<{ status?: string; error?: string; paymentId?: string }>();
   const { data: paymentsData, isLoading: paymentsLoading, refetch: refetchPayments } = usePayments(1);
   const { data: profileData, isLoading: profileLoading } = useProfile();
@@ -262,8 +265,32 @@ export default function PaymentsScreen() {
                   </View>
                   
                   <View className="flex-row justify-between items-center pt-3 mt-3 border-t border-slate-50">
-                    <Text className="text-slate-400 font-bold text-[10px]">{payment.paymentNo}</Text>
-                    <Text className="text-slate-400 font-bold text-[10px]">{dayjs(payment.createdAt).format('DD MMM YYYY, hh:mm A')}</Text>
+                    <View>
+                      <Text className="text-slate-400 font-bold text-[10px]">{payment.paymentNo}</Text>
+                      <Text className="text-slate-400 font-bold text-[10px]">{dayjs(payment.createdAt).format('DD MMM YYYY, hh:mm A')}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const receiptNo = payment.receiptId?.receiptNo || `RCP-${String(payment.paymentNo || payment._id).slice(-6).toUpperCase()}`;
+                        generateAndShareReceipt({
+                          receiptNo,
+                          paymentNo: payment.paymentNo,
+                          payerName: profileData?.member?.name || user?.name || 'Mahallu Member',
+                          payerPhone: profileData?.member?.phone || user?.phone || '',
+                          amount: payment.amount,
+                          category: payment.type,
+                          gateway: payment.gateway,
+                          date: payment.createdAt,
+                          description: payment.description,
+                        });
+                      }}
+                      className="flex-row items-center px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200"
+                    >
+                      <Ionicons name="download-outline" size={14} color="#059669" />
+                      <Text className="text-[11px] font-extrabold text-emerald-800 ml-1">
+                        {language === 'en' ? 'Receipt PDF' : 'രസീത് ഡൗൺലോഡ്'}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 </Animated.View>
               ))}
