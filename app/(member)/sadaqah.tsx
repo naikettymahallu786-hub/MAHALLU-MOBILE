@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../../lib/api';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as Linking from 'expo-linking';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiClient, baseOrigin } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
 
 const PRESET_AMOUNTS = [50, 100, 250, 500, 1000, 2500];
@@ -28,6 +29,7 @@ const SADAQAH_CATEGORIES = [
 
 export default function SadaqahScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ status?: string; paymentId?: string; error?: string }>();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
 
@@ -35,7 +37,8 @@ export default function SadaqahScreen() {
   const [customAmount, setCustomAmount] = useState('');
   const [category, setCategory] = useState('General Sadaqah');
   const [description, setDescription] = useState('');
-  const [gateway, setGateway] = useState('upi');
+  const [gateway, setGateway] = useState<'razorpay' | 'cash'>('razorpay');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const [successReceipt, setSuccessReceipt] = useState<any | null>(null);
 
@@ -52,25 +55,27 @@ export default function SadaqahScreen() {
 
   const sadaqahHistory = Array.isArray(memberPayments) ? memberPayments : [];
 
-  // Submit Sadaqah Payment
-  const payMutation = useMutation({
-    mutationFn: (data: any) => apiClient.post('/receipts/manual', data),
-    onSuccess: (res) => {
-      const receiptData = res.data?.data || {};
+  // Handle return from Razorpay Payment Gateway Redirect
+  useEffect(() => {
+    if (params.status === 'success') {
       setSuccessReceipt({
-        receiptNo: receiptData.receiptNo || 'RCP-2026-SADAQAH',
-        amount: finalAmount,
+        receiptNo: params.paymentId ? `RCP-${String(params.paymentId).slice(-6).toUpperCase()}` : 'RCP-SADAQAH',
+        amount: finalAmount || 100,
         category,
       });
       queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
       refetch();
-    },
-    onError: (err: any) => {
-      Alert.alert('Payment Error', err?.response?.data?.message || 'Failed to process Sadaqah payment');
-    },
-  });
+      router.setParams({ status: undefined, paymentId: undefined });
+    } else if (params.status === 'failure') {
+      Alert.alert('Payment Failed', params.error || 'Transaction could not be completed.');
+      router.setParams({ status: undefined, error: undefined });
+    } else if (params.status === 'cancelled') {
+      Alert.alert('Payment Cancelled', 'You cancelled the payment process.');
+      router.setParams({ status: undefined });
+    }
+  }, [params.status, params.error, params.paymentId]);
 
-  const handlePaySadaqah = () => {
+  const handlePaySadaqah = async () => {
     if (!finalAmount || finalAmount <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount to give Sadaqah.');
       return;
@@ -78,14 +83,63 @@ export default function SadaqahScreen() {
 
     const memberId = (user as any)?.memberId || user?._id;
 
-    payMutation.mutate({
-      type: 'donation',
-      amount: finalAmount,
-      paidById: memberId,
-      paidForId: memberId,
-      description: `[${category}] ${description}`.trim(),
-      gateway,
-    });
+    try {
+      setIsProcessing(true);
+
+      if (gateway === 'cash') {
+        // Record as manual receipt for cash
+        const res = await apiClient.post('/receipts/manual', {
+          type: 'donation',
+          amount: finalAmount,
+          paidById: memberId,
+          paidForId: memberId,
+          description: `[${category}] ${description}`.trim(),
+          gateway: 'cash',
+        });
+        const receiptData = res.data?.data || {};
+        setSuccessReceipt({
+          receiptNo: receiptData.receiptNo || 'RCP-SADAQAH-CASH',
+          amount: finalAmount,
+          category,
+        });
+        queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
+        refetch();
+        return;
+      }
+
+      // 1. Create Razorpay order on backend
+      const response = await apiClient.post('/payments/create-order', {
+        amount: finalAmount,
+        type: 'donation',
+        description: `[${category}] ${description}`.trim() || 'Sadaqah Contribution',
+        paidForId: memberId,
+        gateway: 'razorpay',
+      });
+
+      const { order, payment } = response.data.data;
+
+      // 2. Generate dynamic deep link redirect URL
+      const redirectUrl = Linking.createURL('/(member)/sadaqah');
+
+      // 3. Build Razorpay hosted checkout page URL
+      const backendUrl = baseOrigin;
+      const checkoutUrl =
+        `${backendUrl}/api/v1/payments/checkout` +
+        `?orderId=${order.id}` +
+        `&paymentId=${payment._id}` +
+        `&amount=${order.amount}` +
+        `&name=${encodeURIComponent(user?.name || 'Sadaqah Donor')}` +
+        `&email=${encodeURIComponent(user?.email || '')}` +
+        `&phone=${encodeURIComponent(user?.phone || '')}` +
+        `&redirectUrl=${encodeURIComponent(redirectUrl)}`;
+
+      // 4. Open Razorpay Gateway Checkout (UPI, Google Pay, PhonePe, Cards, Netbanking)
+      await Linking.openURL(checkoutUrl);
+    } catch (err: any) {
+      Alert.alert('Payment Error', err?.response?.data?.message || err?.message || 'Failed to initiate payment gateway');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -102,26 +156,26 @@ export default function SadaqahScreen() {
         <View className="w-8" />
       </View>
 
-      <ScrollView className="flex-1 px-5 pt-4" showsVerticalScrollIndicator={false}>
-        {/* Banner Card */}
-        <View className="bg-gradient-to-r from-emerald-900 to-teal-800 rounded-3xl p-5 mb-6 shadow-md shadow-emerald-900/20">
+      <ScrollView className="flex-1 p-5" showsVerticalScrollIndicator={false}>
+        {/* Banner */}
+        <View className="bg-gradient-to-r from-emerald-700 to-teal-800 p-5 rounded-3xl mb-6 shadow-md shadow-emerald-700/20 bg-emerald-700">
           <View className="flex-row items-center mb-2">
-            <Ionicons name="heart" size={22} color="#34d399" />
-            <Text className="text-emerald-300 text-xs font-bold uppercase tracking-wider ml-2">
-              Voluntary Charity
+            <View className="w-8 h-8 rounded-full bg-emerald-600/80 items-center justify-center mr-2 border border-emerald-400/30">
+              <Ionicons name="heart" size={18} color="#ffffff" />
+            </View>
+            <Text className="text-emerald-100 text-xs font-bold uppercase tracking-wider">
+              Noble Deed • പുണ്യം നിറഞ്ഞ ദാനം
             </Text>
           </View>
           <Text className="text-white text-xl font-extrabold">Sadaqah Wipes Away Sins</Text>
-          <Text className="text-emerald-100/90 text-xs mt-1 leading-relaxed">
-            Contribute freely to support mosque maintenance, water projects, widows, orphans, and medical relief.
+          <Text className="text-emerald-100 text-xs mt-1 leading-relaxed">
+            "Charity does not decrease wealth." Your voluntary contribution directly supports Mahallu families in need.
           </Text>
         </View>
 
         {/* Amount Selector */}
         <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
           <Text className="text-slate-900 font-bold text-sm mb-3">Select Sadaqah Amount (₹)</Text>
-
-          {/* Presets */}
           <View className="flex-row flex-wrap gap-2.5 mb-4">
             {PRESET_AMOUNTS.map((amt) => {
               const isSelected = selectedAmount === amt && !customAmount;
@@ -132,13 +186,13 @@ export default function SadaqahScreen() {
                     setSelectedAmount(amt);
                     setCustomAmount('');
                   }}
-                  className={`px-4 py-2.5 rounded-2xl border font-bold text-sm ${
+                  className={`px-4 py-3 rounded-2xl border items-center justify-center min-w-[75px] ${
                     isSelected
-                      ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
-                      : 'bg-slate-50 border-slate-200 text-slate-700'
+                      ? 'bg-emerald-600 border-emerald-600 shadow-sm shadow-emerald-600/30'
+                      : 'bg-slate-50 border-slate-200'
                   }`}
                 >
-                  <Text className={`font-bold ${isSelected ? 'text-white' : 'text-slate-700'}`}>
+                  <Text className={`font-extrabold text-sm ${isSelected ? 'text-white' : 'text-slate-700'}`}>
                     ₹{amt}
                   </Text>
                 </TouchableOpacity>
@@ -146,26 +200,27 @@ export default function SadaqahScreen() {
             })}
           </View>
 
-          {/* Custom Input */}
+          {/* Custom Amount Input */}
+          <Text className="text-slate-500 font-semibold text-xs mb-1.5">Or Enter Custom Amount (₹)</Text>
           <View className="flex-row items-center border border-slate-200 rounded-2xl px-4 py-3 bg-slate-50">
-            <Text className="text-slate-500 font-extrabold text-lg mr-2">₹</Text>
+            <Text className="text-slate-500 font-bold text-base mr-2">₹</Text>
             <TextInput
-              placeholder="Or enter custom amount..."
+              placeholder="e.g. 5000"
               keyboardType="numeric"
               value={customAmount}
               onChangeText={(text) => {
                 setCustomAmount(text);
                 setSelectedAmount(null);
               }}
-              className="flex-1 text-slate-900 font-extrabold text-base"
+              className="flex-1 font-bold text-base text-slate-900"
             />
           </View>
         </View>
 
-        {/* Category Picker */}
+        {/* Category Selector */}
         <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
           <Text className="text-slate-900 font-bold text-sm mb-3">Sadaqah Category / Purpose</Text>
-          <View className="space-y-2">
+          <View className="gap-2">
             {SADAQAH_CATEGORIES.map((cat) => {
               const isSelected = category === cat.id;
               return (
@@ -173,19 +228,23 @@ export default function SadaqahScreen() {
                   key={cat.id}
                   onPress={() => setCategory(cat.id)}
                   className={`flex-row items-center p-3.5 rounded-2xl border ${
-                    isSelected
-                      ? 'bg-emerald-50 border-emerald-500'
-                      : 'bg-slate-50 border-slate-100'
+                    isSelected ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-100'
                   }`}
                 >
-                  <Ionicons
-                    name={cat.icon as any}
-                    size={20}
-                    color={isSelected ? '#059669' : '#64748b'}
-                  />
+                  <View
+                    className={`w-8 h-8 rounded-xl items-center justify-center mr-3 ${
+                      isSelected ? 'bg-emerald-600' : 'bg-slate-200'
+                    }`}
+                  >
+                    <Ionicons
+                      name={cat.icon as any}
+                      size={16}
+                      color={isSelected ? '#ffffff' : '#64748b'}
+                    />
+                  </View>
                   <Text
-                    className={`ml-3 text-xs font-bold flex-1 ${
-                      isSelected ? 'text-emerald-900' : 'text-slate-700'
+                    className={`flex-1 text-xs font-bold ${
+                      isSelected ? 'text-emerald-950 font-extrabold' : 'text-slate-700'
                     }`}
                   >
                     {cat.label}
@@ -214,15 +273,14 @@ export default function SadaqahScreen() {
           <Text className="text-slate-900 font-bold text-sm mb-3">Payment Method</Text>
           <View className="flex-row gap-3">
             {[
-              { id: 'upi', label: 'UPI / GPay', icon: 'qr-code-outline' },
-              { id: 'card', label: 'Card / NetBank', icon: 'card-outline' },
+              { id: 'razorpay', label: 'Online (UPI / Cards / NetBank)', icon: 'qr-code-outline' },
               { id: 'cash', label: 'Cash in Hand', icon: 'cash-outline' },
             ].map((m) => {
               const isSelected = gateway === m.id;
               return (
                 <TouchableOpacity
                   key={m.id}
-                  onPress={() => setGateway(m.id)}
+                  onPress={() => setGateway(m.id as any)}
                   className={`flex-1 p-3 rounded-2xl border items-center ${
                     isSelected
                       ? 'bg-emerald-50 border-emerald-500'
@@ -230,7 +288,7 @@ export default function SadaqahScreen() {
                   }`}
                 >
                   <Ionicons name={m.icon as any} size={20} color={isSelected ? '#059669' : '#64748b'} />
-                  <Text className={`text-[11px] font-bold mt-1 ${isSelected ? 'text-emerald-900' : 'text-slate-600'}`}>
+                  <Text className={`text-[11px] font-bold mt-1 text-center ${isSelected ? 'text-emerald-900' : 'text-slate-600'}`}>
                     {m.label}
                   </Text>
                 </TouchableOpacity>
@@ -243,15 +301,18 @@ export default function SadaqahScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={handlePaySadaqah}
-          disabled={payMutation.isPending}
-          className="bg-emerald-600 py-4 rounded-2xl items-center shadow-lg shadow-emerald-600/30 mb-8"
+          disabled={isProcessing}
+          className="bg-emerald-600 py-4 rounded-2xl items-center shadow-lg shadow-emerald-600/30 mb-8 flex-row justify-center"
         >
-          {payMutation.isPending ? (
+          {isProcessing ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text className="text-white text-base font-extrabold">
-              Pay Sadaqah ₹{finalAmount || 0}
-            </Text>
+            <>
+              <Ionicons name="card-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text className="text-white text-base font-extrabold">
+                {gateway === 'razorpay' ? 'Proceed to Razorpay ₹' : 'Pay Cash ₹'}{finalAmount || 0}
+              </Text>
+            </>
           )}
         </TouchableOpacity>
 
@@ -262,23 +323,35 @@ export default function SadaqahScreen() {
             <ActivityIndicator color="#059669" className="py-6" />
           ) : sadaqahHistory.length === 0 ? (
             <View className="bg-white border border-slate-200 rounded-3xl p-6 items-center">
-              <Ionicons name="heart-dislike-outline" size={32} color="#94a3b8" />
+              <Ionicons name="receipt-outline" size={32} color="#cbd5e1" />
               <Text className="text-slate-500 text-xs font-semibold mt-2">No past Sadaqah payments recorded yet</Text>
             </View>
           ) : (
-            <View className="space-y-3">
+            <View className="gap-2.5">
               {sadaqahHistory.map((item: any, i: number) => (
-                <View key={i} className="bg-white border border-slate-100 rounded-2xl p-4 flex-row items-center justify-between shadow-sm">
-                  <View className="flex-row items-center">
-                    <View className="w-10 h-10 rounded-xl bg-emerald-500/10 items-center justify-center mr-3">
-                      <Ionicons name="heart" size={20} color="#059669" />
-                    </View>
-                    <View>
-                      <Text className="text-slate-900 font-bold text-sm">₹{item.amount}</Text>
-                      <Text className="text-slate-500 text-xs">{item.description || 'General Sadaqah'}</Text>
-                    </View>
+                <View
+                  key={item._id || i}
+                  className="bg-white border border-slate-200 rounded-2xl p-4 flex-row items-center justify-between"
+                >
+                  <View className="flex-1 mr-3">
+                    <Text className="text-slate-900 font-bold text-sm">
+                      {item.receiptNo || 'RCP-SADAQAH'}
+                    </Text>
+                    <Text className="text-slate-500 text-xs">{item.description || 'General Sadaqah'}</Text>
+                    <Text className="text-slate-400 text-[10px] mt-0.5">
+                      {new Date(item.createdAt).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </Text>
                   </View>
-                  <Text className="text-emerald-700 text-xs font-bold">{item.receiptNo || 'Completed'}</Text>
+                  <View className="items-end">
+                    <Text className="text-emerald-700 font-extrabold text-base">₹{item.amount}</Text>
+                    <Text className="text-emerald-600 text-[10px] font-bold uppercase bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 mt-0.5">
+                      {item.status || 'PAID'}
+                    </Text>
+                  </View>
                 </View>
               ))}
             </View>
@@ -286,35 +359,42 @@ export default function SadaqahScreen() {
         </View>
       </ScrollView>
 
-      {/* Receipt Success Modal */}
-      {successReceipt && (
-        <Modal transparent animationType="fade" visible={!!successReceipt}>
-          <View className="flex-1 bg-black/60 items-center justify-center p-5">
-            <View className="bg-white rounded-3xl p-6 w-full items-center shadow-2xl">
-              <View className="w-16 h-16 rounded-full bg-emerald-100 items-center justify-center mb-4">
-                <Ionicons name="checkmark-circle" size={40} color="#059669" />
-              </View>
-
-              <Text className="text-slate-900 text-xl font-extrabold">Jazakallah Khair!</Text>
-              <Text className="text-slate-600 text-xs text-center mt-1">
-                Your Sadaqah contribution of ₹{successReceipt.amount} has been received successfully.
-              </Text>
-
-              <View className="bg-slate-50 w-full p-4 rounded-2xl my-4 border border-slate-100 items-center">
-                <Text className="text-slate-400 text-xs font-semibold">Official Receipt Number</Text>
-                <Text className="text-emerald-700 font-extrabold text-lg mt-0.5">{successReceipt.receiptNo}</Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setSuccessReceipt(null)}
-                className="bg-emerald-600 w-full py-3.5 rounded-2xl items-center"
-              >
-                <Text className="text-white font-bold text-sm">Done</Text>
-              </TouchableOpacity>
+      {/* Success Receipt Modal */}
+      <Modal visible={!!successReceipt} transparent animationType="fade">
+        <View className="flex-1 bg-black/60 items-center justify-center p-5">
+          <View className="bg-white rounded-3xl p-6 w-full max-w-sm items-center shadow-2xl">
+            <View className="w-16 h-16 rounded-full bg-emerald-100 items-center justify-center mb-4">
+              <Ionicons name="checkmark-circle" size={42} color="#059669" />
             </View>
+            <Text className="text-slate-900 text-xl font-extrabold mb-1">Jazakallah Khair!</Text>
+            <Text className="text-slate-500 text-xs text-center mb-5">
+              Your Sadaqah contribution of ₹{successReceipt?.amount} has been received successfully.
+            </Text>
+
+            <View className="bg-slate-50 rounded-2xl p-4 w-full border border-slate-100 mb-6">
+              <View className="flex-row justify-between mb-2">
+                <Text className="text-slate-400 text-xs">Receipt No:</Text>
+                <Text className="text-slate-800 font-bold text-xs">{successReceipt?.receiptNo}</Text>
+              </View>
+              <View className="flex-row justify-between mb-2">
+                <Text className="text-slate-400 text-xs">Purpose:</Text>
+                <Text className="text-slate-800 font-bold text-xs">{successReceipt?.category}</Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text className="text-slate-400 text-xs">Amount Paid:</Text>
+                <Text className="text-emerald-700 font-extrabold text-sm">₹{successReceipt?.amount}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setSuccessReceipt(null)}
+              className="bg-emerald-600 w-full py-3.5 rounded-2xl items-center shadow-md shadow-emerald-600/30"
+            >
+              <Text className="text-white font-extrabold text-sm">Done</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
