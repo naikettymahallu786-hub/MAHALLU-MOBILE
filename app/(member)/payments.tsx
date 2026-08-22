@@ -42,19 +42,22 @@ export default function PaymentsScreen() {
     refetchDues();
   }, [refetchPayments, refetchDues]);
 
+  const processedParamRef = React.useRef<string | null>(null);
   React.useEffect(() => {
+    if (!params.status) return;
+    const key = `${params.status}_${params.paymentId || ''}_${params.error || ''}`;
+    if (processedParamRef.current === key) return;
+    processedParamRef.current = key;
+
     if (params.status === 'success') {
       alert('Payment Successful!\nYour transaction has been verified successfully.');
       onRefresh();
-      router.setParams({ status: undefined, paymentId: undefined });
     } else if (params.status === 'failure') {
       alert(`Payment Failed!\n${params.error || 'Transaction could not be completed.'}`);
-      router.setParams({ status: undefined, error: undefined });
     } else if (params.status === 'cancelled') {
       alert('Payment Cancelled\nYou cancelled the payment process.');
-      router.setParams({ status: undefined });
     }
-  }, [params.status, params.error, params.paymentId]);
+  }, [params.status, params.error, params.paymentId, onRefresh]);
 
   const handlePayment = async () => {
     if (balance <= 0 || !profileData?.member) return;

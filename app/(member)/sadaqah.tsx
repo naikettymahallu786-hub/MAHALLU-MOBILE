@@ -57,9 +57,15 @@ export default function SadaqahScreen() {
   });
 
   const sadaqahHistory = Array.isArray(memberPayments) ? memberPayments : [];
+  const processedParamRef = React.useRef<string | null>(null);
 
   // Handle return from Razorpay Payment Gateway Redirect
   useEffect(() => {
+    if (!params.status) return;
+    const key = `${params.status}_${params.paymentId || ''}_${params.error || ''}`;
+    if (processedParamRef.current === key) return;
+    processedParamRef.current = key;
+
     if (params.status === 'success') {
       setSuccessReceipt({
         receiptNo: params.paymentId ? `RCP-${String(params.paymentId).slice(-6).toUpperCase()}` : 'RCP-SADAQAH',
@@ -68,13 +74,10 @@ export default function SadaqahScreen() {
       });
       queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
       refetch();
-      router.setParams({ status: undefined, paymentId: undefined });
     } else if (params.status === 'failure') {
       Alert.alert('Payment Failed', params.error || 'Transaction could not be completed.');
-      router.setParams({ status: undefined, error: undefined });
     } else if (params.status === 'cancelled') {
       Alert.alert('Payment Cancelled', 'You cancelled the payment process.');
-      router.setParams({ status: undefined });
     }
   }, [params.status, params.error, params.paymentId]);
 
