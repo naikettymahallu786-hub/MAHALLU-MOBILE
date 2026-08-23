@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, AppState, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useGlobalSearchParams } from 'expo-router';
@@ -28,7 +28,7 @@ export default function PaymentsScreen() {
   const { user } = useAuthStore();
   const params = useGlobalSearchParams<{ status?: string; error?: string; paymentId?: string }>();
   const { data: paymentsData, isLoading: paymentsLoading, refetch: refetchPayments } = usePayments(1);
-  const { data: profileData, isLoading: profileLoading } = useProfile();
+  const { data: profileData, isLoading: profileLoading, refetch: refetchProfile } = useProfile();
   const { data: duesData, isLoading: duesLoading, refetch: refetchDues } = useDues();
 
   const [isProcessing, setIsProcessing] = React.useState(false);
@@ -40,12 +40,53 @@ export default function PaymentsScreen() {
   const balance = family?.outstandingBalance || 0;
   const hasRecurring = family?.recurringDonationType && family.recurringDonationType !== 'none';
 
+  const processedParamRef = React.useRef<string | null>(null);
+  const pendingPaymentRef = React.useRef<{ paymentId?: string; orderId?: string; amount?: number } | null>(null);
+
   const onRefresh = React.useCallback(() => {
     refetchPayments();
+    refetchProfile();
     refetchDues();
-  }, [refetchPayments, refetchDues]);
+  }, [refetchPayments, refetchProfile, refetchDues]);
 
-  const processedParamRef = React.useRef<string | null>(null);
+  // Check pending payment on app resume / foreground
+  const checkPendingPayment = async () => {
+    try {
+      if (pendingPaymentRef.current?.orderId) {
+        const verifyRes = await apiClient.post('/payments/cashfree-verify', {
+          orderId: pendingPaymentRef.current.orderId,
+          paymentId: pendingPaymentRef.current.paymentId,
+        });
+        const verifyData = verifyRes.data?.data;
+        if (verifyData?.success && verifyData?.status === 'PAID') {
+          Alert.alert(
+            language === 'en' ? 'Payment Successful!' : 'പേയ്‌മെന്റ് വിജയകരം!',
+            language === 'en'
+              ? 'Your dues payment has been verified successfully.'
+              : 'നിങ്ങളുടെ പേയ്‌മെന്റ് വിജയകരമായി പൂർത്തിയായി.'
+          );
+          pendingPaymentRef.current = null;
+          onRefresh();
+          return;
+        }
+      }
+
+      onRefresh();
+    } catch (e) {}
+  };
+
+  // Listen to AppState when user returns manually from browser
+  React.useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkPendingPayment();
+      }
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  // Handle return from Payment Gateway Redirect
   React.useEffect(() => {
     if (!params.status) return;
     const key = `${params.status}_${params.paymentId || ''}_${params.error || ''}`;
@@ -53,12 +94,20 @@ export default function PaymentsScreen() {
     processedParamRef.current = key;
 
     if (params.status === 'success') {
-      alert('Payment Successful!\nYour transaction has been verified successfully.');
+      Alert.alert(
+        language === 'en' ? 'Payment Successful!' : 'പേയ്‌മെന്റ് വിജയകരം!',
+        language === 'en'
+          ? 'Your transaction has been verified successfully.'
+          : 'നിങ്ങളുടെ പേയ്‌മെന്റ് വിജയകരമായി രേഖപ്പെടുത്തി.'
+      );
+      pendingPaymentRef.current = null;
       onRefresh();
     } else if (params.status === 'failure') {
-      alert(`Payment Failed!\n${params.error || 'Transaction could not be completed.'}`);
+      Alert.alert('Payment Failed', params.error || 'Transaction could not be completed.');
+      pendingPaymentRef.current = null;
     } else if (params.status === 'cancelled') {
-      alert('Payment Cancelled\nYou cancelled the payment process.');
+      Alert.alert('Payment Cancelled', 'You cancelled the payment process.');
+      pendingPaymentRef.current = null;
     }
   }, [params.status, params.error, params.paymentId, onRefresh]);
 
@@ -67,35 +116,45 @@ export default function PaymentsScreen() {
 
     try {
       setIsProcessing(true);
-      // 1. Create order on the backend
+
+      // Generate dynamic deep link redirect URL
+      const redirectUrl = Linking.createURL('/(member)/payments');
+
+      // 1. Create Cashfree order on the backend
       const response = await apiClient.post('/payments/create-order', {
         amount: balance,
         type: 'donation',
         description: 'Pending Dues Payment',
         paidForId: profileData.member._id,
-        gateway: 'razorpay',
+        gateway: 'cashfree',
+        redirectUrl,
       });
 
       const { order, payment } = response.data.data;
 
-      // 2. Generate dynamic deep link redirect URL
-      const redirectUrl = Linking.createURL('/(member)/payments');
+      // Track pending payment for auto-verification on return
+      pendingPaymentRef.current = {
+        paymentId: payment?._id,
+        orderId: order?.order_id || order?.id,
+        amount: balance,
+      };
 
-      // 3. Build the checkout page URL
+      // 2. Build Cashfree checkout page URL
       const backendUrl = baseOrigin;
-      const checkoutUrl = `${backendUrl}/api/v1/payments/checkout` +
-        `?orderId=${order.id}` +
-        `&paymentId=${payment._id}` +
-        `&amount=${order.amount}` +
+      const checkoutUrl = `${backendUrl}/api/v1/payments/cashfree-checkout` +
+        `?paymentSessionId=${encodeURIComponent(order?.payment_session_id || '')}` +
+        `&orderId=${encodeURIComponent(order?.order_id || order?.id || '')}` +
+        `&paymentId=${encodeURIComponent(payment?._id || '')}` +
+        `&amount=${encodeURIComponent(balance)}` +
         `&name=${encodeURIComponent(profileData.member.name || '')}` +
         `&email=${encodeURIComponent(profileData.user?.email || '')}` +
         `&phone=${encodeURIComponent(profileData.member.phone || '')}` +
         `&redirectUrl=${encodeURIComponent(redirectUrl)}`;
 
-      // 4. Open checkout page in device default browser
+      // 3. Open Cashfree checkout page in device browser
       await Linking.openURL(checkoutUrl);
     } catch (err: any) {
-      alert(err.message || 'Payment initiation failed');
+      Alert.alert('Payment Error', err?.message || 'Cashfree payment initiation failed');
     } finally {
       setIsProcessing(false);
     }

@@ -9,11 +9,13 @@ import {
   ActivityIndicator,
   Modal,
   StyleSheet,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useGlobalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
+import dayjs from 'dayjs';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, baseOrigin } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
@@ -43,7 +45,7 @@ export default function SadaqahScreen() {
   const [customAmount, setCustomAmount] = useState('');
   const [category, setCategory] = useState('General Sadaqah');
   const [description, setDescription] = useState('');
-  const [gateway, setGateway] = useState<'razorpay' | 'cash'>('razorpay');
+  const [gateway, setGateway] = useState<'cashfree' | 'cash'>('cashfree');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const [successReceipt, setSuccessReceipt] = useState<any | null>(null);
@@ -61,8 +63,69 @@ export default function SadaqahScreen() {
 
   const sadaqahHistory = Array.isArray(memberPayments) ? memberPayments : [];
   const processedParamRef = useRef<string | null>(null);
+  const pendingPaymentRef = useRef<{ paymentId?: string; orderId?: string; amount?: number; category?: string } | null>(null);
 
-  // Handle return from Razorpay Payment Gateway Redirect
+  // Check pending payment on app resume / foreground
+  const checkPendingPayment = async () => {
+    try {
+      if (pendingPaymentRef.current?.orderId) {
+        const verifyRes = await apiClient.post('/payments/cashfree-verify', {
+          orderId: pendingPaymentRef.current.orderId,
+          paymentId: pendingPaymentRef.current.paymentId,
+        });
+        const verifyData = verifyRes.data?.data;
+        if (verifyData?.success && verifyData?.status === 'PAID') {
+          const receiptNo =
+            verifyData?.payment?.receiptId?.receiptNo ||
+            (verifyData?.payment?._id ? `RCP-${String(verifyData.payment._id).slice(-6).toUpperCase()}` : 'RCP-SADAQAH');
+
+          setSuccessReceipt({
+            receiptNo,
+            amount: pendingPaymentRef.current.amount || finalAmount || 100,
+            category: pendingPaymentRef.current.category || category,
+          });
+          pendingPaymentRef.current = null;
+          queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
+          refetch();
+          return;
+        }
+      }
+
+      // Check latest entry in history if recent
+      const historyRes = await apiClient.get('/payments/reports/finance', { params: { category: 'donation' } });
+      const items = historyRes.data?.data?.items || [];
+      if (items.length > 0) {
+        const latest = items[0];
+        const isRecent = dayjs().diff(dayjs(latest.createdAt), 'minute') < 5;
+        if (isRecent && latest.status === 'success') {
+          const cat = latest.description?.match(/\[(.*?)\]/)?.[1] || pendingPaymentRef.current?.category || category;
+          setSuccessReceipt({
+            receiptNo: latest.receiptId?.receiptNo || `RCP-${String(latest._id).slice(-6).toUpperCase()}`,
+            amount: latest.amount || pendingPaymentRef.current?.amount || finalAmount || 100,
+            category: cat,
+          });
+          pendingPaymentRef.current = null;
+          queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
+          refetch();
+        }
+      }
+    } catch (e) {
+      // Ignored
+    }
+  };
+
+  // Listen to AppState when user returns manually from browser
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkPendingPayment();
+      }
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  // Handle return from Payment Gateway Deep Link Redirect
   useEffect(() => {
     if (!params.status) return;
     const key = `${params.status}_${params.paymentId || ''}_${params.error || ''}`;
@@ -72,15 +135,18 @@ export default function SadaqahScreen() {
     if (params.status === 'success') {
       setSuccessReceipt({
         receiptNo: params.paymentId ? `RCP-${String(params.paymentId).slice(-6).toUpperCase()}` : 'RCP-SADAQAH',
-        amount: finalAmount || 100,
-        category,
+        amount: pendingPaymentRef.current?.amount || finalAmount || 100,
+        category: pendingPaymentRef.current?.category || category,
       });
+      pendingPaymentRef.current = null;
       queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
       refetch();
     } else if (params.status === 'failure') {
       Alert.alert('Payment Failed', params.error || 'Transaction could not be completed.');
+      pendingPaymentRef.current = null;
     } else if (params.status === 'cancelled') {
       Alert.alert('Payment Cancelled', 'You cancelled the payment process.');
+      pendingPaymentRef.current = null;
     }
   }, [params.status, params.error, params.paymentId]);
 
@@ -115,36 +181,46 @@ export default function SadaqahScreen() {
         return;
       }
 
-      // 1. Create Razorpay order on backend
+      // Generate dynamic deep link redirect URL
+      const redirectUrl = Linking.createURL('/(member)/sadaqah');
+
+      // 1. Create Cashfree order on backend
       const response = await apiClient.post('/payments/create-order', {
         amount: finalAmount,
         type: 'donation',
         description: `[${category}] ${description}`.trim() || 'Sadaqah Contribution',
         paidForId: memberId,
-        gateway: 'razorpay',
+        gateway: 'cashfree',
+        redirectUrl,
       });
 
       const { order, payment } = response.data.data;
 
-      // 2. Generate dynamic deep link redirect URL
-      const redirectUrl = Linking.createURL('/(member)/sadaqah');
+      // Track pending payment for auto-verification on return
+      pendingPaymentRef.current = {
+        paymentId: payment?._id,
+        orderId: order?.order_id || order?.id,
+        amount: finalAmount,
+        category,
+      };
 
-      // 3. Build Razorpay hosted checkout page URL
+      // 2. Build Cashfree hosted checkout page URL
       const backendUrl = baseOrigin;
       const checkoutUrl =
-        `${backendUrl}/api/v1/payments/checkout` +
-        `?orderId=${order.id}` +
-        `&paymentId=${payment._id}` +
-        `&amount=${order.amount}` +
+        `${backendUrl}/api/v1/payments/cashfree-checkout` +
+        `?paymentSessionId=${encodeURIComponent(order?.payment_session_id || '')}` +
+        `&orderId=${encodeURIComponent(order?.order_id || order?.id || '')}` +
+        `&paymentId=${encodeURIComponent(payment?._id || '')}` +
+        `&amount=${encodeURIComponent(finalAmount)}` +
         `&name=${encodeURIComponent(user?.name || 'Sadaqah Donor')}` +
         `&email=${encodeURIComponent(user?.email || '')}` +
         `&phone=${encodeURIComponent(user?.phone || '')}` +
         `&redirectUrl=${encodeURIComponent(redirectUrl)}`;
 
-      // 4. Open Razorpay Gateway Checkout (UPI, Google Pay, PhonePe, Cards, Netbanking)
+      // 3. Open Cashfree Gateway Checkout (UPI, Google Pay, PhonePe, Paytm, Cards, Netbanking)
       await Linking.openURL(checkoutUrl);
     } catch (err: any) {
-      Alert.alert('Payment Error', err?.response?.data?.message || err?.message || 'Failed to initiate payment gateway');
+      Alert.alert('Payment Error', err?.response?.data?.message || err?.message || 'Failed to initiate Cashfree payment gateway');
     } finally {
       setIsProcessing(false);
     }
@@ -267,7 +343,7 @@ export default function SadaqahScreen() {
           <Text style={styles.cardTitle}>{t('paymentMethod', language)}</Text>
           <View style={styles.methodRow}>
             {[
-              { id: 'razorpay', label: t('onlinePayment', language), icon: 'qr-code-outline' },
+              { id: 'cashfree', label: language === 'en' ? 'Online (UPI / GPay / Cards)' : 'ഓൺലൈൻ (UPI / GPay / കാർഡ്)', icon: 'qr-code-outline' },
               { id: 'cash', label: t('cashInHand', language), icon: 'cash-outline' },
             ].map((m) => {
               const isSelected = gateway === m.id;
@@ -301,7 +377,7 @@ export default function SadaqahScreen() {
             <View style={styles.payBtnContent}>
               <Ionicons name="card-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.payBtnText}>
-                {gateway === 'razorpay' ? `${t('proceedToRazorpay', language)}: ₹` : `${t('payCash', language)}: ₹`}{finalAmount || 0}
+                {gateway === 'cashfree' ? `${language === 'en' ? 'Pay Online (Cashfree)' : 'ഓൺലൈൻ വഴി അടയ്ക്കുക'}: ₹` : `${t('payCash', language)}: ₹`}{finalAmount || 0}
               </Text>
             </View>
           )}
