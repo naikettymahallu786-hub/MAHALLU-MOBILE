@@ -163,6 +163,23 @@ export default function RegisterFormScreen() {
           {role === 'MEMBER' && (
             <>
               <View>
+                <Text style={{ color: '#475569', marginBottom: 8, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Existing Family (optional)</Text>
+                <TouchableOpacity
+                  onPress={fetchFamilies}
+                  disabled={fetchingFamilies}
+                  style={{ backgroundColor: 'white', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 16, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <Text style={{ color: form.familyId ? '#0f172a' : '#94a3b8', fontSize: 16 }}>
+                    {fetchingFamilies
+                      ? 'Loading families...'
+                      : form.familyId
+                      ? families.find(f => f._id === form.familyId)?.headName || 'Family selected'
+                      : 'Link to an existing family'}
+                  </Text>
+                  {fetchingFamilies ? <ActivityIndicator size="small" color={TEAL} /> : <Ionicons name="chevron-forward" size={18} color="#94a3b8" />}
+                </TouchableOpacity>
+              </View>
+              <View>
                 <Text style={{ color: '#475569', marginBottom: 8, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Address Line 1</Text>
                 <TextInput
                   style={{ backgroundColor: 'white', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 16, padding: 18, color: '#0f172a', fontSize: 16, shadowColor: '#94a3b8', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 }}

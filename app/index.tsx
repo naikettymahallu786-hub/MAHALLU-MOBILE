@@ -3,7 +3,16 @@ import { useAuthStore } from '../store/auth.store';
 import { UserRole } from '../lib/types';
 
 export default function Index() {
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, hasHydrated } = useAuthStore();
+
+  // Wait for the persisted auth state to load from AsyncStorage before
+  // deciding where to redirect — otherwise an already-logged-in user gets
+  // bounced to the landing screen on every cold start, since this screen
+  // unmounts as soon as it redirects and never gets a chance to re-render
+  // once hydration actually finishes.
+  if (!hasHydrated) {
+    return null;
+  }
 
   if (!isAuthenticated) {
     return <Redirect href="/(auth)/landing" />;

@@ -30,22 +30,32 @@ const darkTheme = {
   colors: { ...MD3DarkTheme.colors, primary: ISLAMIC_GREEN, secondary: '#34d399' },
 };
 
+// Keep the native splash screen up until the persisted auth state has
+// rehydrated (see store/auth.store.ts) — hiding it immediately caused a
+// flash of the wrong screen while app/index.tsx was still waiting to learn
+// whether the user was already logged in.
+try {
+  require('expo-splash-screen')?.preventAutoHideAsync().catch(() => {});
+} catch {
+  // Ignore if splash screen not available
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? darkTheme : lightTheme;
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
 
   // Enable real-time sound notifications on notices and events
   usePushNotifications();
 
   useEffect(() => {
+    if (!hasHydrated) return;
     try {
-      const SplashScreen = require('expo-splash-screen');
-      SplashScreen?.preventAutoHideAsync().catch(() => {});
-      SplashScreen?.hideAsync().catch(() => {});
-    } catch (e) {
+      require('expo-splash-screen')?.hideAsync().catch(() => {});
+    } catch {
       // Ignore if splash screen not available
     }
-  }, []);
+  }, [hasHydrated]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

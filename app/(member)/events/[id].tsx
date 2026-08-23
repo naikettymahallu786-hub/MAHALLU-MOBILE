@@ -192,7 +192,7 @@ export default function EventDetailScreen() {
             {renderFormattedDescription(data.description, data.title, data.date, data.chiefGuest)}
           </View>
         </View>
-      </ScrollView>iew>
+      </ScrollView>
 
       {/* Registration Bottom Bar */}
       <View 

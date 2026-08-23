@@ -18,10 +18,12 @@ interface AuthState {
   user: User | null;
   tokens: AuthTokens | null;
   isAuthenticated: boolean;
+  hasHydrated: boolean;
   login: (user: User, tokens: AuthTokens) => void;
   logout: () => void;
   updateUser: (user: Partial<User>) => void;
   setTokens: (tokens: AuthTokens) => void;
+  setHasHydrated: (hasHydrated: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -30,6 +32,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       tokens: null,
       isAuthenticated: false,
+      hasHydrated: false,
 
       login: (user, tokens) =>
         set({ user, tokens, isAuthenticated: true }),
@@ -44,10 +47,20 @@ export const useAuthStore = create<AuthState>()(
         })),
 
       setTokens: (tokens) => set({ tokens }),
+
+      setHasHydrated: (hasHydrated) => set({ hasHydrated }),
     }),
     {
       name: 'mahallu-mobile-auth',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        user: state.user,
+        tokens: state.tokens,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     },
   ),
 );
