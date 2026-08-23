@@ -1,50 +1,31 @@
 import { useEffect } from 'react';
-import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '../../store/auth.store';
 import { io } from 'socket.io-client';
-import { baseOrigin } from '../api';
-
-const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+import { apiClient, baseOrigin } from '../api';
+import { initializeNotificationChannels } from '../services/prayerNotificationService';
 
 export function usePushNotifications() {
   const { user, isAuthenticated } = useAuthStore();
 
   useEffect(() => {
-    if (isExpoGo || !isAuthenticated || !user) return;
+    // 1. Initialize native notification channels and permissions
+    initializeNotificationChannels();
 
-    let Notifications: typeof import('expo-notifications') | null = null;
-    try {
-      Notifications = require('expo-notifications');
-      if (Notifications && Notifications.setNotificationHandler) {
-        Notifications.setNotificationHandler({
-          handleNotification: async () => ({
-            shouldShowAlert: true,
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-            shouldShowBanner: true,
-            shouldShowList: true,
-          }),
-        });
-      }
-    } catch (e) {
-      // Ignore if notifications module cannot be initialized natively
-    }
+    if (!isAuthenticated || !user) return;
 
-    if (Notifications) {
-      try {
-        Notifications.getPermissionsAsync()
-          .then(({ status: existingStatus }) => {
-            if (existingStatus !== 'granted') {
-              Notifications?.requestPermissionsAsync();
-            }
-          })
-          .catch(() => {});
-      } catch (e) {
-        // Ignore permission errors
-      }
-    }
+    // 2. Register Expo Push Token with Backend (for notifications when app is closed)
+    Notifications.getExpoPushTokenAsync()
+      .then((pushTokenData) => {
+        if (pushTokenData?.data) {
+          apiClient.patch('/auth/fcm-token', { fcmToken: pushTokenData.data }).catch(() => {});
+        }
+      })
+      .catch((err) => {
+        console.warn('[Push] Error getting push token:', err);
+      });
 
-    // 2. Connect to real-time Socket.io server
+    // 3. Connect to real-time Socket.io server
     const socket = io(baseOrigin, {
       transports: ['websocket'],
       autoConnect: true,
@@ -90,8 +71,21 @@ export function usePushNotifications() {
       }
     });
 
+    // 4. Handle user tapping on system notification
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      try {
+        const data = response?.notification?.request?.content?.data;
+        if (data?.url) {
+          // If custom URL specified
+        }
+      } catch (err) {
+        console.warn('[Push] Error handling notification tap:', err);
+      }
+    });
+
     return () => {
       socket.disconnect();
+      responseSubscription.remove();
     };
   }, [user, isAuthenticated]);
 }

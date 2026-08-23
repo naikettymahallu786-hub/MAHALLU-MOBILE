@@ -39,6 +39,11 @@
         "ACCESS_COARSE_LOCATION",
         "RECEIVE_BOOT_COMPLETED",
         "VIBRATE",
+        "WAKE_LOCK",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
+        "POST_NOTIFICATIONS",
+        "FOREGROUND_SERVICE",
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
         "RECORD_AUDIO"
@@ -76,19 +81,27 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#059669"
+          "color": "#059669",
+          "sounds": [
+            "./assets/audio/adhan.mp3"
+          ]
         }
       ],
       "expo-font",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-asset"
     ],
     "scheme": "mahallu",
     "experiments": {
       "typedRoutes": true
     },
+    "owner": "sajalus-team",
     "extra": {
-      "apiUrl": "https://mahallu-4d9t.onrender.com/api/v1",
-      "router": {}
+      "apiUrl": "https://mahallu-backend-cv55.onrender.com/api/v1",
+      "router": {},
+      "eas": {
+        "projectId": "6551c2b6-f27f-4802-8738-ec8dce355b14"
+      }
     }
   }
 }

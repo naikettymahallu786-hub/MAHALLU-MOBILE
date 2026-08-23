@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,34 +8,45 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  StyleSheet,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../../lib/api';
+import { useRouter, useGlobalSearchParams } from 'expo-router';
+import * as Linking from 'expo-linking';
+import dayjs from 'dayjs';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiClient, baseOrigin } from '../../lib/api';
 import { useAuthStore } from '../../store/auth.store';
+import { useLanguageStore } from '../../lib/store/languageStore';
+import { generateAndShareReceipt } from '../../lib/services/receiptDownloadService';
+import { t } from '../../lib/i18n';
+import { colors } from '../../lib/theme';
 
 const PRESET_AMOUNTS = [50, 100, 250, 500, 1000, 2500];
 
-const SADAQAH_CATEGORIES = [
-  { id: 'General Sadaqah', label: 'General Sadaqah (സ്വദഖ)', icon: 'heart-outline' },
-  { id: 'Mosque Maintenance', label: 'Mosque & Water Fund (പള്ളി ഫണ്ട്)', icon: 'business-outline' },
-  { id: 'Orphan & Relief', label: 'Orphan & Relief Support (അനാഥ ഫണ്ട്)', icon: 'people-outline' },
-  { id: 'Food & Medical Aid', label: 'Food & Medical Aid (മെഡിക്കൽ ഫണ്ട്)', icon: 'medkit-outline' },
-  { id: 'Education Fund', label: 'Education & Madrasa (വിദ്യാഭ്യാസ ഫണ്ട്)', icon: 'school-outline' },
-];
-
 export default function SadaqahScreen() {
   const router = useRouter();
+  const params = useGlobalSearchParams<{ status?: string; paymentId?: string; error?: string }>();
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
+  const { language } = useLanguageStore();
+
+  const SADAQAH_CATEGORIES = [
+    { id: 'General Sadaqah', label: language === 'ml' ? 'പൊതു സ്വദഖ (General Sadaqah)' : 'General Sadaqah (പൊതു സ്വദഖ)', icon: 'heart-outline' },
+    { id: 'Mosque Maintenance', label: language === 'ml' ? 'പള്ളി സംരക്ഷണ ഫണ്ട്' : 'Mosque & Water Fund (പള്ളി ഫണ്ട്)', icon: 'business-outline' },
+    { id: 'Orphan & Relief', label: language === 'ml' ? 'അഗതി-അനാഥ സംരക്ഷണം' : 'Orphan & Relief Support (അനാഥ ഫണ്ട്)', icon: 'people-outline' },
+    { id: 'Food & Medical Aid', label: language === 'ml' ? 'മെഡിക്കൽ & റിലീഫ് ഫണ്ട്' : 'Food & Medical Aid (മെഡിക്കൽ ഫണ്ട്)', icon: 'medkit-outline' },
+    { id: 'Education Fund', label: language === 'ml' ? 'വിദ്യാഭ്യാസ & മദ്രസ ഫണ്ട്' : 'Education & Madrasa (വിദ്യാഭ്യാസ ഫണ്ട്)', icon: 'school-outline' },
+  ];
 
   const [selectedAmount, setSelectedAmount] = useState<number | null>(100);
   const [customAmount, setCustomAmount] = useState('');
   const [category, setCategory] = useState('General Sadaqah');
   const [description, setDescription] = useState('');
-  const [gateway, setGateway] = useState('upi');
+  const [gateway, setGateway] = useState<'cashfree' | 'cash'>('cashfree');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const [successReceipt, setSuccessReceipt] = useState<any | null>(null);
 
@@ -51,26 +62,95 @@ export default function SadaqahScreen() {
   });
 
   const sadaqahHistory = Array.isArray(memberPayments) ? memberPayments : [];
+  const processedParamRef = useRef<string | null>(null);
+  const pendingPaymentRef = useRef<{ paymentId?: string; orderId?: string; amount?: number; category?: string } | null>(null);
 
-  // Submit Sadaqah Payment
-  const payMutation = useMutation({
-    mutationFn: (data: any) => apiClient.post('/receipts/manual', data),
-    onSuccess: (res) => {
-      const receiptData = res.data?.data || {};
+  // Check pending payment on app resume / foreground
+  const checkPendingPayment = async () => {
+    try {
+      if (pendingPaymentRef.current?.orderId) {
+        const verifyRes = await apiClient.post('/payments/cashfree-verify', {
+          orderId: pendingPaymentRef.current.orderId,
+          paymentId: pendingPaymentRef.current.paymentId,
+        });
+        const verifyData = verifyRes.data?.data;
+        if (verifyData?.success && verifyData?.status === 'PAID') {
+          const receiptNo =
+            verifyData?.payment?.receiptId?.receiptNo ||
+            (verifyData?.payment?._id ? `RCP-${String(verifyData.payment._id).slice(-6).toUpperCase()}` : 'RCP-SADAQAH');
+
+          setSuccessReceipt({
+            receiptNo,
+            amount: pendingPaymentRef.current.amount || finalAmount || 100,
+            category: pendingPaymentRef.current.category || category,
+          });
+          pendingPaymentRef.current = null;
+          queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
+          refetch();
+          return;
+        }
+      }
+
+      // Check latest entry in history if recent
+      const historyRes = await apiClient.get('/payments/reports/finance', { params: { category: 'donation' } });
+      const items = historyRes.data?.data?.items || [];
+      if (items.length > 0) {
+        const latest = items[0];
+        const isRecent = dayjs().diff(dayjs(latest.createdAt), 'minute') < 5;
+        if (isRecent && latest.status === 'success') {
+          const cat = latest.description?.match(/\[(.*?)\]/)?.[1] || pendingPaymentRef.current?.category || category;
+          setSuccessReceipt({
+            receiptNo: latest.receiptId?.receiptNo || `RCP-${String(latest._id).slice(-6).toUpperCase()}`,
+            amount: latest.amount || pendingPaymentRef.current?.amount || finalAmount || 100,
+            category: cat,
+          });
+          pendingPaymentRef.current = null;
+          queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
+          refetch();
+        }
+      }
+    } catch (e) {
+      // Ignored
+    }
+  };
+
+  // Listen to AppState when user returns manually from browser
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkPendingPayment();
+      }
+    });
+
+    return () => sub.remove();
+  }, []);
+
+  // Handle return from Payment Gateway Deep Link Redirect
+  useEffect(() => {
+    if (!params.status) return;
+    const key = `${params.status}_${params.paymentId || ''}_${params.error || ''}`;
+    if (processedParamRef.current === key) return;
+    processedParamRef.current = key;
+
+    if (params.status === 'success') {
       setSuccessReceipt({
-        receiptNo: receiptData.receiptNo || 'RCP-2026-SADAQAH',
-        amount: finalAmount,
-        category,
+        receiptNo: params.paymentId ? `RCP-${String(params.paymentId).slice(-6).toUpperCase()}` : 'RCP-SADAQAH',
+        amount: pendingPaymentRef.current?.amount || finalAmount || 100,
+        category: pendingPaymentRef.current?.category || category,
       });
+      pendingPaymentRef.current = null;
       queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
       refetch();
-    },
-    onError: (err: any) => {
-      Alert.alert('Payment Error', err?.response?.data?.message || 'Failed to process Sadaqah payment');
-    },
-  });
+    } else if (params.status === 'failure') {
+      Alert.alert('Payment Failed', params.error || 'Transaction could not be completed.');
+      pendingPaymentRef.current = null;
+    } else if (params.status === 'cancelled') {
+      Alert.alert('Payment Cancelled', 'You cancelled the payment process.');
+      pendingPaymentRef.current = null;
+    }
+  }, [params.status, params.error, params.paymentId]);
 
-  const handlePaySadaqah = () => {
+  const handlePaySadaqah = async () => {
     if (!finalAmount || finalAmount <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount to give Sadaqah.');
       return;
@@ -78,67 +158,118 @@ export default function SadaqahScreen() {
 
     const memberId = (user as any)?.memberId || user?._id;
 
-    payMutation.mutate({
-      type: 'donation',
-      amount: finalAmount,
-      paidById: memberId,
-      paidForId: memberId,
-      description: `[${category}] ${description}`.trim(),
-      gateway,
-    });
+    try {
+      setIsProcessing(true);
+
+      if (gateway === 'cash') {
+        const res = await apiClient.post('/receipts/manual', {
+          type: 'donation',
+          amount: finalAmount,
+          paidById: memberId,
+          paidForId: memberId,
+          description: `[${category}] ${description}`.trim(),
+          gateway: 'cash',
+        });
+        const receiptData = res.data?.data || {};
+        setSuccessReceipt({
+          receiptNo: receiptData.receiptNo || 'RCP-SADAQAH-CASH',
+          amount: finalAmount,
+          category,
+        });
+        queryClient.invalidateQueries({ queryKey: ['my-sadaqah-history'] });
+        refetch();
+        return;
+      }
+
+      // Generate dynamic deep link redirect URL
+      const redirectUrl = Linking.createURL('/(member)/sadaqah');
+
+      // 1. Create Cashfree order on backend
+      const response = await apiClient.post('/payments/create-order', {
+        amount: finalAmount,
+        type: 'donation',
+        description: `[${category}] ${description}`.trim() || 'Sadaqah Contribution',
+        paidForId: memberId,
+        gateway: 'cashfree',
+        redirectUrl,
+      });
+
+      const { order, payment } = response.data.data;
+
+      // Track pending payment for auto-verification on return
+      pendingPaymentRef.current = {
+        paymentId: payment?._id,
+        orderId: order?.order_id || order?.id,
+        amount: finalAmount,
+        category,
+      };
+
+      // 2. Build Cashfree hosted checkout page URL
+      const backendUrl = baseOrigin;
+      const checkoutUrl =
+        `${backendUrl}/api/v1/payments/cashfree-checkout` +
+        `?paymentSessionId=${encodeURIComponent(order?.payment_session_id || '')}` +
+        `&orderId=${encodeURIComponent(order?.order_id || order?.id || '')}` +
+        `&paymentId=${encodeURIComponent(payment?._id || '')}` +
+        `&amount=${encodeURIComponent(finalAmount)}` +
+        `&name=${encodeURIComponent(user?.name || 'Sadaqah Donor')}` +
+        `&email=${encodeURIComponent(user?.email || '')}` +
+        `&phone=${encodeURIComponent(user?.phone || '')}` +
+        `&redirectUrl=${encodeURIComponent(redirectUrl)}`;
+
+      // 3. Open Cashfree Gateway Checkout (UPI, Google Pay, PhonePe, Paytm, Cards, Netbanking)
+      await Linking.openURL(checkoutUrl);
+    } catch (err: any) {
+      Alert.alert('Payment Error', err?.response?.data?.message || err?.message || 'Failed to initiate Cashfree payment gateway');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
-      <View className="px-5 py-4 bg-white border-b border-slate-200 flex-row items-center justify-between shadow-sm">
-        <TouchableOpacity onPress={() => router.back()} className="p-2 -ml-2 rounded-xl">
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#0f172a" />
         </TouchableOpacity>
-        <View className="items-center">
-          <Text className="text-slate-900 text-lg font-extrabold">Give Sadaqah (സ്വദഖ)</Text>
-          <Text className="text-slate-500 text-xs font-semibold">Voluntary Charity & Relief Fund</Text>
+        <View style={styles.headerTextContainer}>
+          <Text style={styles.headerTitle}>{t('sadaqahTitle', language)}</Text>
+          <Text style={styles.headerSubtitle}>{t('voluntaryCharity', language)}</Text>
         </View>
-        <View className="w-8" />
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView className="flex-1 px-5 pt-4" showsVerticalScrollIndicator={false}>
-        {/* Banner Card */}
-        <View className="bg-gradient-to-r from-emerald-900 to-teal-800 rounded-3xl p-5 mb-6 shadow-md shadow-emerald-900/20">
-          <View className="flex-row items-center mb-2">
-            <Ionicons name="heart" size={22} color="#34d399" />
-            <Text className="text-emerald-300 text-xs font-bold uppercase tracking-wider ml-2">
-              Voluntary Charity
-            </Text>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Banner */}
+        <View style={styles.banner}>
+          <View style={styles.bannerHeader}>
+            <View style={styles.bannerIconCircle}>
+              <Ionicons name="heart" size={18} color="#ffffff" />
+            </View>
+            <Text style={styles.bannerTag}>{t('nobleDeed', language)}</Text>
           </View>
-          <Text className="text-white text-xl font-extrabold">Sadaqah Wipes Away Sins</Text>
-          <Text className="text-emerald-100/90 text-xs mt-1 leading-relaxed">
-            Contribute freely to support mosque maintenance, water projects, widows, orphans, and medical relief.
-          </Text>
+          <Text style={styles.bannerTitle}>{t('sadaqahHadithTitle', language)}</Text>
+          <Text style={styles.bannerDesc}>{t('sadaqahHadithDesc', language)}</Text>
         </View>
 
         {/* Amount Selector */}
-        <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">Select Sadaqah Amount (₹)</Text>
-
-          {/* Presets */}
-          <View className="flex-row flex-wrap gap-2.5 mb-4">
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('selectAmount', language)}</Text>
+          <View style={styles.presetGrid}>
             {PRESET_AMOUNTS.map((amt) => {
               const isSelected = selectedAmount === amt && !customAmount;
               return (
                 <TouchableOpacity
                   key={amt}
+                  activeOpacity={0.7}
                   onPress={() => {
                     setSelectedAmount(amt);
                     setCustomAmount('');
                   }}
-                  className={`px-4 py-2.5 rounded-2xl border font-bold text-sm ${
-                    isSelected
-                      ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
-                      : 'bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
+                  style={[styles.presetBtn, isSelected ? styles.presetBtnActive : styles.presetBtnInactive]}
                 >
-                  <Text className={`font-bold ${isSelected ? 'text-white' : 'text-slate-700'}`}>
+                  <Text style={[styles.presetBtnText, isSelected ? styles.presetBtnTextActive : styles.presetBtnTextInactive]}>
                     ₹{amt}
                   </Text>
                 </TouchableOpacity>
@@ -146,48 +277,45 @@ export default function SadaqahScreen() {
             })}
           </View>
 
-          {/* Custom Input */}
-          <View className="flex-row items-center border border-slate-200 rounded-2xl px-4 py-3 bg-slate-50">
-            <Text className="text-slate-500 font-extrabold text-lg mr-2">₹</Text>
+          {/* Custom Amount Input */}
+          <Text style={styles.inputLabel}>{t('customAmount', language)}</Text>
+          <View style={styles.inputRow}>
+            <Text style={styles.currencySymbol}>₹</Text>
             <TextInput
-              placeholder="Or enter custom amount..."
+              placeholder="e.g. 5000"
+              placeholderTextColor="#94a3b8"
               keyboardType="numeric"
               value={customAmount}
               onChangeText={(text) => {
                 setCustomAmount(text);
                 setSelectedAmount(null);
               }}
-              className="flex-1 text-slate-900 font-extrabold text-base"
+              style={styles.textInput}
             />
           </View>
         </View>
 
-        {/* Category Picker */}
-        <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">Sadaqah Category / Purpose</Text>
-          <View className="space-y-2">
+        {/* Category Selector */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('selectCategory', language)}</Text>
+          <View style={styles.categoryList}>
             {SADAQAH_CATEGORIES.map((cat) => {
               const isSelected = category === cat.id;
               return (
                 <TouchableOpacity
                   key={cat.id}
+                  activeOpacity={0.7}
                   onPress={() => setCategory(cat.id)}
-                  className={`flex-row items-center p-3.5 rounded-2xl border ${
-                    isSelected
-                      ? 'bg-emerald-50 border-emerald-500'
-                      : 'bg-slate-50 border-slate-100'
-                  }`}
+                  style={[styles.categoryItem, isSelected ? styles.categoryItemActive : styles.categoryItemInactive]}
                 >
-                  <Ionicons
-                    name={cat.icon as any}
-                    size={20}
-                    color={isSelected ? '#059669' : '#64748b'}
-                  />
-                  <Text
-                    className={`ml-3 text-xs font-bold flex-1 ${
-                      isSelected ? 'text-emerald-900' : 'text-slate-700'
-                    }`}
-                  >
+                  <View style={[styles.categoryIconCircle, isSelected ? styles.categoryIconCircleActive : styles.categoryIconCircleInactive]}>
+                    <Ionicons
+                      name={cat.icon as any}
+                      size={16}
+                      color={isSelected ? '#ffffff' : '#64748b'}
+                    />
+                  </View>
+                  <Text style={[styles.categoryLabel, isSelected ? styles.categoryLabelActive : styles.categoryLabelInactive]}>
                     {cat.label}
                   </Text>
                   {isSelected && <Ionicons name="checkmark-circle" size={18} color="#059669" />}
@@ -198,39 +326,36 @@ export default function SadaqahScreen() {
         </View>
 
         {/* Description / Notes */}
-        <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-5 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-2">Optional Note / Intent</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('optionalNote', language)}</Text>
           <TextInput
-            placeholder="e.g. For family wellbeing / Esaal-e-Sawab..."
+            placeholder={language === 'en' ? 'e.g. For family wellbeing / Esaal-e-Sawab...' : 'ഉദാഹരണത്തിന്: കുടുംബത്തിന് വേണ്ടി / ഈസാൽ-എ-സവാബ്...'}
+            placeholderTextColor="#94a3b8"
             value={description}
             onChangeText={setDescription}
-            className="border border-slate-200 rounded-2xl px-4 py-3 text-sm bg-slate-50 text-slate-900"
+            style={styles.textArea}
             multiline
           />
         </View>
 
         {/* Payment Method */}
-        <View className="bg-white border border-slate-200 rounded-3xl p-5 mb-6 shadow-sm">
-          <Text className="text-slate-900 font-bold text-sm mb-3">Payment Method</Text>
-          <View className="flex-row gap-3">
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('paymentMethod', language)}</Text>
+          <View style={styles.methodRow}>
             {[
-              { id: 'upi', label: 'UPI / GPay', icon: 'qr-code-outline' },
-              { id: 'card', label: 'Card / NetBank', icon: 'card-outline' },
-              { id: 'cash', label: 'Cash in Hand', icon: 'cash-outline' },
+              { id: 'cashfree', label: language === 'en' ? 'Online (UPI / GPay / Cards)' : 'ഓൺലൈൻ (UPI / GPay / കാർഡ്)', icon: 'qr-code-outline' },
+              { id: 'cash', label: t('cashInHand', language), icon: 'cash-outline' },
             ].map((m) => {
               const isSelected = gateway === m.id;
               return (
                 <TouchableOpacity
                   key={m.id}
-                  onPress={() => setGateway(m.id)}
-                  className={`flex-1 p-3 rounded-2xl border items-center ${
-                    isSelected
-                      ? 'bg-emerald-50 border-emerald-500'
-                      : 'bg-slate-50 border-slate-100'
-                  }`}
+                  activeOpacity={0.7}
+                  onPress={() => setGateway(m.id as any)}
+                  style={[styles.methodBtn, isSelected ? styles.methodBtnActive : styles.methodBtnInactive]}
                 >
                   <Ionicons name={m.icon as any} size={20} color={isSelected ? '#059669' : '#64748b'} />
-                  <Text className={`text-[11px] font-bold mt-1 ${isSelected ? 'text-emerald-900' : 'text-slate-600'}`}>
+                  <Text style={[styles.methodLabel, isSelected ? styles.methodLabelActive : styles.methodLabelInactive]}>
                     {m.label}
                   </Text>
                 </TouchableOpacity>
@@ -243,78 +368,583 @@ export default function SadaqahScreen() {
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={handlePaySadaqah}
-          disabled={payMutation.isPending}
-          className="bg-emerald-600 py-4 rounded-2xl items-center shadow-lg shadow-emerald-600/30 mb-8"
+          disabled={isProcessing}
+          style={styles.payBtn}
         >
-          {payMutation.isPending ? (
+          {isProcessing ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text className="text-white text-base font-extrabold">
-              Pay Sadaqah ₹{finalAmount || 0}
-            </Text>
+            <View style={styles.payBtnContent}>
+              <Ionicons name="card-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.payBtnText}>
+                {gateway === 'cashfree' ? `${language === 'en' ? 'Pay Online (Cashfree)' : 'ഓൺലൈൻ വഴി അടയ്ക്കുക'}: ₹` : `${t('payCash', language)}: ₹`}{finalAmount || 0}
+              </Text>
+            </View>
           )}
         </TouchableOpacity>
 
         {/* History Section */}
-        <View className="mb-12">
-          <Text className="text-slate-900 font-extrabold text-base mb-3">My Past Sadaqah Contributions</Text>
+        <View style={styles.historySection}>
+          <Text style={styles.historyTitle}>{t('pastSadaqah', language)}</Text>
           {isLoading ? (
-            <ActivityIndicator color="#059669" className="py-6" />
+            <ActivityIndicator color="#059669" style={{ paddingVertical: 24 }} />
           ) : sadaqahHistory.length === 0 ? (
-            <View className="bg-white border border-slate-200 rounded-3xl p-6 items-center">
-              <Ionicons name="heart-dislike-outline" size={32} color="#94a3b8" />
-              <Text className="text-slate-500 text-xs font-semibold mt-2">No past Sadaqah payments recorded yet</Text>
+            <View style={styles.emptyHistory}>
+              <Ionicons name="receipt-outline" size={32} color="#cbd5e1" />
+              <Text style={styles.emptyHistoryText}>{t('noRecentContributions', language)}</Text>
             </View>
           ) : (
-            <View className="space-y-3">
-              {sadaqahHistory.map((item: any, i: number) => (
-                <View key={i} className="bg-white border border-slate-100 rounded-2xl p-4 flex-row items-center justify-between shadow-sm">
-                  <View className="flex-row items-center">
-                    <View className="w-10 h-10 rounded-xl bg-emerald-500/10 items-center justify-center mr-3">
-                      <Ionicons name="heart" size={20} color="#059669" />
+            <View style={styles.historyList}>
+              {sadaqahHistory.map((item: any, i: number) => {
+                const rNo = item.receiptNo || `RCP-${String(item._id).slice(-6).toUpperCase()}`;
+                return (
+                  <View key={item._id || i} style={styles.historyCard}>
+                    <View style={{ flex: 1, marginRight: 12 }}>
+                      <Text style={styles.historyReceiptNo}>{rNo}</Text>
+                      <Text style={styles.historyDesc}>{item.description || 'General Sadaqah'}</Text>
+                      <Text style={styles.historyDate}>
+                        {new Date(item.createdAt).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </Text>
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          generateAndShareReceipt({
+                            receiptNo: rNo,
+                            paymentNo: item.paymentNo,
+                            payerName: item.payerName || user?.name || 'Mahallu Member',
+                            payerPhone: item.payerPhone || user?.phone || '',
+                            amount: item.amount,
+                            category: item.category || 'General Sadaqah',
+                            gateway: item.gateway,
+                            date: item.createdAt,
+                            description: item.description,
+                          });
+                        }}
+                        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}
+                      >
+                        <Ionicons name="download-outline" size={14} color="#059669" />
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#059669', marginLeft: 4 }}>
+                          {language === 'en' ? 'Download Receipt PDF' : 'രസീത് ഡൗൺലോഡ് (PDF)'}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
-                    <View>
-                      <Text className="text-slate-900 font-bold text-sm">₹{item.amount}</Text>
-                      <Text className="text-slate-500 text-xs">{item.description || 'General Sadaqah'}</Text>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.historyAmount}>₹{item.amount}</Text>
+                      <View style={styles.historyStatusBadge}>
+                        <Text style={styles.historyStatusText}>
+                          {item.status || 'PAID'}
+                        </Text>
+                      </View>
                     </View>
                   </View>
-                  <Text className="text-emerald-700 text-xs font-bold">{item.receiptNo || 'Completed'}</Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>
       </ScrollView>
 
-      {/* Receipt Success Modal */}
-      {successReceipt && (
-        <Modal transparent animationType="fade" visible={!!successReceipt}>
-          <View className="flex-1 bg-black/60 items-center justify-center p-5">
-            <View className="bg-white rounded-3xl p-6 w-full items-center shadow-2xl">
-              <View className="w-16 h-16 rounded-full bg-emerald-100 items-center justify-center mb-4">
-                <Ionicons name="checkmark-circle" size={40} color="#059669" />
-              </View>
-
-              <Text className="text-slate-900 text-xl font-extrabold">Jazakallah Khair!</Text>
-              <Text className="text-slate-600 text-xs text-center mt-1">
-                Your Sadaqah contribution of ₹{successReceipt.amount} has been received successfully.
-              </Text>
-
-              <View className="bg-slate-50 w-full p-4 rounded-2xl my-4 border border-slate-100 items-center">
-                <Text className="text-slate-400 text-xs font-semibold">Official Receipt Number</Text>
-                <Text className="text-emerald-700 font-extrabold text-lg mt-0.5">{successReceipt.receiptNo}</Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => setSuccessReceipt(null)}
-                className="bg-emerald-600 w-full py-3.5 rounded-2xl items-center"
-              >
-                <Text className="text-white font-bold text-sm">Done</Text>
-              </TouchableOpacity>
+      {/* Success Receipt Modal */}
+      <Modal visible={!!successReceipt} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.receiptCard}>
+            <View style={styles.receiptIconCircle}>
+              <Ionicons name="checkmark-circle" size={42} color="#059669" />
             </View>
+            <Text style={styles.receiptHeading}>Jazakallah Khair!</Text>
+            <Text style={styles.receiptSubheading}>
+              Your Sadaqah contribution of ₹{successReceipt?.amount} has been received successfully.
+            </Text>
+
+            <View style={styles.receiptDetails}>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Receipt No:</Text>
+                <Text style={styles.receiptValue}>{successReceipt?.receiptNo}</Text>
+              </View>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Purpose:</Text>
+                <Text style={styles.receiptValue}>{successReceipt?.category}</Text>
+              </View>
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Amount Paid:</Text>
+                <Text style={[styles.receiptValue, { color: '#059669', fontSize: 15, fontWeight: '900' }]}>
+                  ₹{successReceipt?.amount}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                generateAndShareReceipt({
+                  receiptNo: successReceipt?.receiptNo || 'RCP-SADAQAH',
+                  payerName: user?.name || 'Mahallu Member',
+                  payerPhone: user?.phone || '',
+                  amount: successReceipt?.amount || 0,
+                  category: successReceipt?.category,
+                  date: new Date(),
+                  description: description,
+                });
+              }}
+              style={{
+                backgroundColor: '#ECFDF5',
+                borderWidth: 1.5,
+                borderColor: '#A7F3D0',
+                width: '100%',
+                paddingVertical: 12,
+                borderRadius: 16,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                marginBottom: 10,
+              }}
+            >
+              <Ionicons name="download-outline" size={18} color="#059669" style={{ marginRight: 6 }} />
+              <Text style={{ color: '#047857', fontWeight: '900', fontSize: 14 }}>
+                {language === 'en' ? 'Download Official Receipt (PDF)' : 'ഔദ്യോഗിക രസീത് ഡൗൺലോഡ് (PDF)'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setSuccessReceipt(null)}
+              style={styles.doneBtn}
+            >
+              <Text style={styles.doneBtnText}>Done</Text>
+            </TouchableOpacity>
           </View>
-        </Modal>
-      )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backBtn: {
+    padding: 8,
+    marginLeft: -8,
+    borderRadius: 12,
+  },
+  headerTextContainer: {
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  banner: {
+    backgroundColor: '#047857',
+    padding: 20,
+    borderRadius: 24,
+    marginBottom: 20,
+    shadowColor: '#047857',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  bannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  bannerIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  bannerTag: {
+    color: '#D1FAE5',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  bannerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  bannerDesc: {
+    color: '#ECFDF5',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 18,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 12,
+  },
+  presetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 16,
+  },
+  presetBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 78,
+  },
+  presetBtnActive: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  presetBtnInactive: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  presetBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  presetBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  presetBtnTextInactive: {
+    color: '#334155',
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 6,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#F8FAFC',
+  },
+  currencySymbol: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#64748B',
+    marginRight: 8,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    padding: 0,
+  },
+  categoryList: {
+    gap: 10,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  categoryItemActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  categoryItemInactive: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#F1F5F9',
+  },
+  categoryIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  categoryIconCircleActive: {
+    backgroundColor: '#059669',
+  },
+  categoryIconCircleInactive: {
+    backgroundColor: '#E2E8F0',
+  },
+  categoryLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  categoryLabelActive: {
+    color: '#064E3B',
+    fontWeight: '900',
+  },
+  categoryLabelInactive: {
+    color: '#334155',
+  },
+  textArea: {
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 13,
+    backgroundColor: '#F8FAFC',
+    color: '#0F172A',
+    minHeight: 50,
+  },
+  methodRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  methodBtn: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  methodBtnActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#10B981',
+  },
+  methodBtnInactive: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+  },
+  methodLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  methodLabelActive: {
+    color: '#064E3B',
+  },
+  methodLabelInactive: {
+    color: '#64748B',
+  },
+  payBtn: {
+    backgroundColor: '#059669',
+    paddingVertical: 16,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 28,
+    shadowColor: '#059669',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  payBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  payBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  historySection: {
+    marginBottom: 40,
+  },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 14,
+  },
+  emptyHistory: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyHistoryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 8,
+  },
+  historyList: {
+    gap: 10,
+  },
+  historyCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  historyReceiptNo: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  historyDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  historyDate: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  historyAmount: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#047857',
+  },
+  historyStatusBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginTop: 4,
+  },
+  historyStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#047857',
+    textTransform: 'uppercase',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  receiptCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  receiptIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  receiptHeading: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  receiptSubheading: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  receiptDetails: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
+    padding: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    marginBottom: 24,
+    gap: 8,
+  },
+  receiptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  receiptLabel: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  receiptValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  doneBtn: {
+    backgroundColor: '#059669',
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#059669',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  doneBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+});

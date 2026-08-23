@@ -1,36 +1,34 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ActivityIndicator, TouchableOpacity, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import dayjs from 'dayjs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
 import { Asset } from 'expo-asset';
+import { useLanguageStore } from '../lib/store/languageStore';
+import {
+  schedulePrayerNotifications,
+  scheduleTestPrayerNotification,
+  DEFAULT_REMINDERS,
+  PrayerRemindersState,
+  ReminderMode,
+  initializeNotificationChannels,
+} from '../lib/services/prayerNotificationService';
 
 const ADHAN_AUDIO_URLS = [
-  'https://mahallu-4d9t.onrender.com/adhan.mp3',
+  'https://mahallu-backend-cv55.onrender.com/adhan.mp3',
   'https://raw.githubusercontent.com/abodehq/Athan-MP3/master/Athan.mp3',
 ];
 
-export type ReminderMode = 'voice' | 'silent' | 'off';
-
-export interface PrayerRemindersState {
-  Fajr: ReminderMode;
-  Dhuhr: ReminderMode;
-  Asr: ReminderMode;
-  Maghrib: ReminderMode;
-  Isha: ReminderMode;
-}
-
-const DEFAULT_REMINDERS: PrayerRemindersState = {
-  Fajr: 'voice',
-  Dhuhr: 'voice',
-  Asr: 'voice',
-  Maghrib: 'voice',
-  Isha: 'voice',
-};
-
 interface PrayerData {
+  hijriDate?: {
+    day: string;
+    month: string;
+    year: string;
+    formatted: string;
+  };
   timings?: {
     Fajr?: string;
     Sunrise?: string;
@@ -38,7 +36,6 @@ interface PrayerData {
     Asr?: string;
     Maghrib?: string;
     Isha?: string;
-    Sunset?: string;
     [key: string]: string | undefined;
   };
   iqamahTimes?: {
@@ -69,6 +66,7 @@ const format12H = (time24?: string) => {
 };
 
 export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps) {
+  const { language } = useLanguageStore();
   const [nextPrayer, setNextPrayer] = useState<{
     name: string;
     time: string;
@@ -76,10 +74,16 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
     type: 'Bang' | 'Namaz';
   } | null>(null);
 
+  const router = useRouter();
   const [reminders, setReminders] = useState<PrayerRemindersState>(DEFAULT_REMINDERS);
   const [isPlayingAdhan, setIsPlayingAdhan] = useState(false);
   const audioRef = useRef<any>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+
+  // Initialize notification channels on mount
+  useEffect(() => {
+    initializeNotificationChannels();
+  }, []);
 
   // Load Saved Reminder Preferences
   useEffect(() => {
@@ -93,14 +97,51 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
       }
     });
 
+    // Listen for incoming notifications when app is active/foreground
+    let sub: any = null;
+    let responseSub: any = null;
+
+    try {
+      if (Notifications?.addNotificationReceivedListener) {
+        sub = Notifications.addNotificationReceivedListener((notification) => {
+          const notifData = notification?.request?.content?.data;
+          if (notifData?.type === 'prayer-adhan' && notifData?.mode === 'voice') {
+            playAdhanAudio();
+          }
+        });
+      }
+
+      if (Notifications?.addNotificationResponseReceivedListener) {
+        responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+          const notifData = response?.notification?.request?.content?.data;
+          if (notifData?.type === 'prayer-adhan') {
+            playAdhanAudio();
+          }
+        });
+      }
+    } catch (e) {
+      // Graceful fallback in Expo Go
+    }
+
     return () => {
+      try {
+        if (sub && typeof sub.remove === 'function') sub.remove();
+        if (responseSub && typeof responseSub.remove === 'function') responseSub.remove();
+      } catch (e) {}
       if (soundRef.current) {
         soundRef.current.unloadAsync().catch(() => {});
       }
     };
   }, []);
 
-  // Save Reminder Preferences
+  // Schedule native background notifications whenever prayer data or reminders change
+  useEffect(() => {
+    if (data?.timings) {
+      schedulePrayerNotifications(data.timings, data.iqamahTimes, reminders, language).catch(() => {});
+    }
+  }, [data, reminders, language]);
+
+  // Save Reminder Preferences & Re-schedule native alarms
   const toggleReminder = async (prayerKey: keyof PrayerRemindersState) => {
     const current = reminders[prayerKey];
     let nextMode: ReminderMode = 'voice';
@@ -111,6 +152,10 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
     const updated = { ...reminders, [prayerKey]: nextMode };
     setReminders(updated);
     await AsyncStorage.setItem('@prayer_reminders_v3', JSON.stringify(updated));
+
+    if (data?.timings) {
+      await schedulePrayerNotifications(data.timings, data.iqamahTimes, updated, language);
+    }
   };
 
   // Audio Player for Bang Voice (Adhan)
@@ -317,6 +362,17 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
 
   const isFriday = new Date().getDay() === 5;
   const prayers = ['Fajr', isFriday ? 'Jumuah' : 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+  const isMl = language === 'ml';
+
+  const prayerNamesMl: Record<string, string> = {
+    Fajr: 'ഫജ്ർ',
+    Sunrise: 'സൂര്യോദയം',
+    Dhuhr: 'ദുഹ്ർ',
+    Asr: 'അസ്ർ',
+    Maghrib: 'മഗ്‌രിബ്',
+    Isha: 'ഇശാഅ്',
+    Jumuah: 'ജുമുഅ',
+  };
 
   return (
     <View
@@ -340,27 +396,52 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
             <Ionicons name="moon" size={18} color="#10b981" />
           </View>
           <View>
-            <Text className="text-slate-900 font-extrabold text-base">Namaz & Bang Times</Text>
+            <Text className="text-slate-900 font-extrabold text-base">
+              {isMl ? 'നമസ്കാര & ബാങ്ക് സമയം' : 'Namaz & Bang Times'}
+            </Text>
             <Text className="text-slate-500 text-[11px] mt-0.5">{dayjs().format('dddd, DD MMMM YYYY')}</Text>
           </View>
         </View>
 
-        {/* Test Adhan Audio Button */}
-        <TouchableOpacity
-          onPress={playAdhanAudio}
-          className={`flex-row items-center px-3 py-1.5 rounded-full border ${
-            isPlayingAdhan ? 'bg-emerald-600 border-emerald-600' : 'bg-emerald-50 border-emerald-200'
-          }`}
-        >
-          <Ionicons
-            name={isPlayingAdhan ? 'stop-circle' : 'volume-high'}
-            size={14}
-            color={isPlayingAdhan ? '#ffffff' : '#059669'}
-          />
-          <Text className={`text-[11px] font-bold ml-1.5 ${isPlayingAdhan ? 'text-white' : 'text-emerald-700'}`}>
-            {isPlayingAdhan ? 'Stop Voice' : 'Test Bang Voice'}
-          </Text>
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-1.5">
+          {/* Test 10s Background Alarm Button */}
+          <TouchableOpacity
+            onPress={async () => {
+              await scheduleTestPrayerNotification(language);
+              Alert.alert(
+                isMl ? 'ടെസ്റ്റ് അലാറം ഷെഡ്യൂൾ ചെയ്തു' : 'Test Alarm Scheduled',
+                isMl
+                  ? '10 സെക്കൻഡിൽ ബാങ്ക് ശബ്ദത്തോടെ നോട്ടിഫിക്കേഷൻ വരും. ഇപ്പോൾ ആപ്പ് പൂർണ്ണമായി ക്ലോസ് ചെയ്ത് ഫോൺ ലോക്ക് ചെയ്ത് പരിശോധിക്കാം!'
+                  : 'Adhan notification with sound will arrive in 10 seconds. You can now close/swipe away the app and lock your phone to test!'
+              );
+            }}
+            className="flex-row items-center px-2.5 py-1.5 rounded-full border bg-amber-50 border-amber-200"
+          >
+            <Ionicons name="alarm-outline" size={13} color="#d97706" />
+            <Text className="text-[10px] font-bold ml-1 text-amber-800">
+              {isMl ? '10s ടെസ്റ്റ്' : 'Test 10s'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Test Adhan Live Audio Button */}
+          <TouchableOpacity
+            onPress={playAdhanAudio}
+            className={`flex-row items-center px-2.5 py-1.5 rounded-full border ${
+              isPlayingAdhan ? 'bg-emerald-600 border-emerald-600' : 'bg-emerald-50 border-emerald-200'
+            }`}
+          >
+            <Ionicons
+              name={isPlayingAdhan ? 'stop-circle' : 'volume-high'}
+              size={13}
+              color={isPlayingAdhan ? '#ffffff' : '#059669'}
+            />
+            <Text className={`text-[10px] font-bold ml-1 ${isPlayingAdhan ? 'text-white' : 'text-emerald-700'}`}>
+              {isPlayingAdhan
+                ? (isMl ? 'നിർത്തുക' : 'Stop')
+                : (isMl ? 'ബാങ്ക്' : 'Audio')}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Next Prayer Banner */}
@@ -370,15 +451,21 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
             <Ionicons name="notifications-circle" size={22} color="#34d399" />
             <View className="ml-2.5">
               <Text className="text-emerald-100 text-[10px] uppercase font-bold tracking-wider">
-                Upcoming {nextPrayer.type}
+                {isMl
+                  ? (nextPrayer.type === 'Bang' ? 'അടുത്ത ബാങ്ക്' : 'അടുത്ത ജമാഅത്ത്')
+                  : `Upcoming ${nextPrayer.type}`}
               </Text>
-              <Text className="text-white font-extrabold text-sm">{nextPrayer.name}</Text>
+              <Text className="text-white font-extrabold text-sm">
+                {isMl ? (prayerNamesMl[nextPrayer.name] || nextPrayer.name) : nextPrayer.name}
+              </Text>
             </View>
           </View>
 
           <View className="bg-white/20 px-3 py-1.5 rounded-xl">
             <Text className="text-white font-extrabold text-xs">
-              in {Math.floor(nextPrayer.inMinutes / 60)}h {nextPrayer.inMinutes % 60}m
+              {isMl
+                ? `${Math.floor(nextPrayer.inMinutes / 60) > 0 ? `${Math.floor(nextPrayer.inMinutes / 60)}മ ` : ''}${nextPrayer.inMinutes % 60} മിനുട്ടിൽ`
+                : `in ${Math.floor(nextPrayer.inMinutes / 60)}h ${nextPrayer.inMinutes % 60}m`}
             </Text>
           </View>
         </View>
@@ -387,16 +474,24 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
       {/* Grid Header */}
       <View className="flex-row mb-3 px-1">
         <View className="flex-[1.5]">
-          <Text className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Prayer</Text>
+          <Text className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+            {isMl ? 'നമസ്കാരം' : 'Prayer'}
+          </Text>
         </View>
         <View className="flex-1 items-center">
-          <Text className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Bang</Text>
+          <Text className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">
+            {isMl ? 'ബാങ്ക്' : 'Bang'}
+          </Text>
         </View>
         <View className="flex-1 items-center">
-          <Text className="text-emerald-600 text-[10px] uppercase font-bold tracking-wider">Namaz</Text>
+          <Text className="text-emerald-600 text-[10px] uppercase font-bold tracking-wider">
+            {isMl ? 'ജമാഅത്ത്' : 'Namaz'}
+          </Text>
         </View>
         <View className="flex-1 items-end">
-          <Text className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Reminder</Text>
+          <Text className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+            {isMl ? 'അറിയിപ്പ്' : 'Reminder'}
+          </Text>
         </View>
       </View>
 
@@ -411,6 +506,8 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
           const reminderKey = (prayerName === 'Jumuah' ? 'Dhuhr' : prayerName) as keyof PrayerRemindersState;
           const mode = reminders[reminderKey] || 'voice';
 
+          const displayedName = isMl ? (prayerNamesMl[prayerName] || prayerName) : prayerName;
+
           return (
             <View
               key={prayerName}
@@ -422,7 +519,7 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
               <View className="flex-[1.5] flex-row items-center">
                 <View className={`w-2 h-2 rounded-full mr-2 ${isNext ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                 <Text className={`font-extrabold text-xs ${isNext ? 'text-emerald-900' : 'text-slate-700'}`}>
-                  {prayerName}
+                  {displayedName}
                 </Text>
               </View>
 
@@ -511,6 +608,28 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
           </View>
         </View>
       </View>
+
+      {/* About Mosque Details Link */}
+      <TouchableOpacity
+        onPress={() => router.push('/(member)/mosque')}
+        activeOpacity={0.8}
+        className="mt-3.5 py-2.5 px-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex-row items-center justify-between"
+      >
+        <View className="flex-row items-center">
+          <View className="w-6 h-6 rounded-lg bg-emerald-600 items-center justify-center mr-2">
+            <Ionicons name="business" size={13} color="#ffffff" />
+          </View>
+          <Text className="text-emerald-950 font-extrabold text-xs">
+            {isMl ? 'പള്ളി വിവരങ്ങൾ & ഭാരവാഹികൾ' : 'About Mosque, Imam & Committee'}
+          </Text>
+        </View>
+        <View className="flex-row items-center">
+          <Text className="text-emerald-700 font-bold text-[11px] mr-1">
+            {isMl ? 'കാണുക' : 'View'}
+          </Text>
+          <Ionicons name="chevron-forward" size={14} color="#047857" />
+        </View>
+      </TouchableOpacity>
     </View>
   );
 }

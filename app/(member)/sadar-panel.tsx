@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal, FlatList } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import api from '../../lib/api';
-import { Avatar } from '../../components/ui/Avatar';
+import { apiClient } from '../../lib/api';
+import { useLanguageStore } from '../../lib/store/languageStore';
+import { t } from '../../lib/i18n';
 
 // Theme colors
 const TEAL_DARK = '#0B4A42';
@@ -14,493 +25,1550 @@ const CREAM = '#FBF8F2';
 
 export default function SadarPanelScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const { language } = useLanguageStore();
+
+  // Active Main Tab: 'classes' | 'enroll'
+  const [activeMainTab, setActiveMainTab] = useState<'classes' | 'enroll'>('classes');
+
+  // Loading states
+  const [refreshing, setRefreshing] = useState(false);
   const [fetchingData, setFetchingData] = useState(true);
-  const [fetchingMembers, setFetchingMembers] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Selection states
-  const [selectedFamilyId, setSelectedFamilyId] = useState('');
-  const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [selectedClassId, setSelectedClassId] = useState('');
-  const [admissionNo, setAdmissionNo] = useState('');
-
-  // On-the-fly new child state
-  const [isAddingNewChild, setIsAddingNewChild] = useState(false);
-  const [newChildName, setNewChildName] = useState('');
-  const [newChildGender, setNewChildGender] = useState<'male' | 'female'>('male');
-  const [newChildRelationship, setNewChildRelationship] = useState('Child');
-
-  // Options lists
-  const [families, setFamilies] = useState<any[]>([]);
-  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+  // Main Data
   const [classes, setClasses] = useState<any[]>([]);
+  const [teachers, setTeachers] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
+  const [families, setFamilies] = useState<any[]>([]);
+  const [allStudents, setAllStudents] = useState<any[]>([]);
 
-  // Search filter inside family modal
+  // -------------------------------------------------------------
+  // CLASS MANAGEMENT MODALS & STATES
+  // -------------------------------------------------------------
+  const [selectedClass, setSelectedClass] = useState<any | null>(null);
+  const [classStudents, setClassStudents] = useState<any[]>([]);
+  const [fetchingClassStudents, setFetchingClassStudents] = useState(false);
+
+  // Create Class Modal
+  const [showCreateClassModal, setShowCreateClassModal] = useState(false);
+  const [newClassName, setNewClassName] = useState('');
+  const [newClassLevel, setNewClassLevel] = useState('1');
+  const [newClassYear, setNewClassYear] = useState('2026-2027');
+  const [newClassTeacherId, setNewClassTeacherId] = useState('');
+  const [newClassSubjects, setNewClassSubjects] = useState('Quran, Fiqh, Arabic, Thareekh');
+
+  // Unified Usthadh Picker Modal (for creating class or changing usthadh)
+  const [showUsthadhPickerModal, setShowUsthadhPickerModal] = useState(false);
+  const [usthadhPickerMode, setUsthadhPickerMode] = useState<'create_class' | 'change_class_usthadh'>('create_class');
+  const [usthadhSearchQuery, setUsthadhSearchQuery] = useState('');
+  const [usthadhSubTab, setUsthadhSubTab] = useState<'search' | 'new'>('search');
+
+  // On-the-fly New Usthadh Form
+  const [newUsthadhName, setNewUsthadhName] = useState('');
+  const [newUsthadhEmail, setNewUsthadhEmail] = useState('');
+  const [newUsthadhPassword, setNewUsthadhPassword] = useState('');
+  const [newUsthadhPhone, setNewUsthadhPhone] = useState('');
+  const [newUsthadhQualification, setNewUsthadhQualification] = useState('Islamic Scholar / Usthadh');
+
+  // Add Students to Selected Class Modal
+  const [showAddStudentsModal, setShowAddStudentsModal] = useState(false);
+  const [addStudentsTab, setAddStudentsTab] = useState<'family' | 'existing'>('family');
   const [familySearchQuery, setFamilySearchQuery] = useState('');
+  const [selectedFamilyForClass, setSelectedFamilyForClass] = useState<any | null>(null);
+  const [selectedFamilyMemberIds, setSelectedFamilyMemberIds] = useState<string[]>([]);
+  const [selectedExistingStudentIds, setSelectedExistingStudentIds] = useState<string[]>([]);
 
-  // Modal UI visibility states
-  const [showFamilyModal, setShowFamilyModal] = useState(false);
-  const [showClassModal, setShowClassModal] = useState(false);
+  // -------------------------------------------------------------
+  // QUICK ENROLLMENT TAB STATES
+  // -------------------------------------------------------------
+  const [enrollFamilyId, setEnrollFamilyId] = useState('');
+  const [enrollMemberId, setEnrollMemberId] = useState('');
+  const [enrollClassId, setEnrollClassId] = useState('');
+  const [enrollAdmissionNo, setEnrollAdmissionNo] = useState('');
+  const [enrollFamilyMembers, setEnrollFamilyMembers] = useState<any[]>([]);
+  const [fetchingEnrollMembers, setFetchingEnrollMembers] = useState(false);
+  const [showEnrollFamilyModal, setShowEnrollFamilyModal] = useState(false);
+  const [showEnrollClassModal, setShowEnrollClassModal] = useState(false);
 
-  useEffect(() => {
-    const loadInitialData = async () => {
-      try {
-        const [familiesRes, classesRes] = await Promise.all([
-          api.get('/mobile/sadar/families'),
-          api.get('/mobile/sadar/classes'),
-        ]);
-        setFamilies(familiesRes.data.data || []);
-        setClasses(classesRes.data.data || []);
-      } catch (err) {
-        Alert.alert('Error', 'Failed to fetch classes or families for enrollment.');
-      } finally {
-        setFetchingData(false);
-      }
-    };
-    loadInitialData();
-  }, []);
-
-  // Fetch family members when family is selected
-  const handleSelectFamily = async (familyId: string) => {
-    setSelectedFamilyId(familyId);
-    setSelectedMemberId('');
-    setIsAddingNewChild(false);
-    setShowFamilyModal(false);
-
+  // Load All Madrasa Data
+  const loadData = async () => {
     try {
-      setFetchingMembers(true);
-      const res = await api.get(`/mobile/sadar/families/${familyId}/members`);
-      setFamilyMembers(res.data.data || []);
+      setRefreshing(true);
+      const [classesRes, teachersRes, membersRes, familiesRes, studentsRes] = await Promise.allSettled([
+        apiClient.get('/classes'),
+        apiClient.get('/teachers', { params: { limit: 1000 } }),
+        apiClient.get('/members', { params: { limit: 2000 } }),
+        apiClient.get('/families', { params: { limit: 1000 } }),
+        apiClient.get('/students', { params: { limit: 1000 } }),
+      ]);
+
+      if (classesRes.status === 'fulfilled') {
+        const clsData = classesRes.value.data?.data;
+        if (Array.isArray(clsData)) setClasses(clsData);
+      }
+      if (teachersRes.status === 'fulfilled') {
+        const tData = teachersRes.value.data?.data || teachersRes.value.data;
+        if (Array.isArray(tData)) setTeachers(tData);
+      }
+      if (membersRes.status === 'fulfilled') {
+        const mData = membersRes.value.data?.data;
+        const items = Array.isArray(mData) ? mData : mData?.items || [];
+        if (Array.isArray(items)) setMembers(items);
+      }
+      if (familiesRes.status === 'fulfilled') {
+        const fData = familiesRes.value.data?.data;
+        const familyArray = Array.isArray(fData)
+          ? fData
+          : Array.isArray(fData?.families)
+          ? fData.families
+          : Array.isArray(familiesRes.value.data)
+          ? familiesRes.value.data
+          : [];
+        setFamilies(familyArray);
+      }
+      if (studentsRes.status === 'fulfilled') {
+        const sData = studentsRes.value.data?.data;
+        if (Array.isArray(sData)) setAllStudents(sData);
+      }
     } catch (err) {
-      Alert.alert('Error', 'Failed to load members of selected family.');
+      console.warn('[Sadar Panel] Error loading data:', err);
     } finally {
-      setFetchingMembers(false);
+      setFetchingData(false);
+      setRefreshing(false);
     }
   };
 
-  const handleSubmit = async () => {
-    if (!selectedFamilyId) {
-      Alert.alert('Missing Selection', 'Please select a Family first.');
-      return;
-    }
+  useEffect(() => {
+    loadData();
+  }, []);
 
-    if (!selectedClassId) {
-      Alert.alert('Missing Selection', 'Please select a Madrasa Class.');
-      return;
+  // Fetch students for a specific class when opened
+  const handleOpenClassDetails = async (cls: any) => {
+    setSelectedClass(cls);
+    try {
+      setFetchingClassStudents(true);
+      const res = await apiClient.get(`/students?classId=${cls._id}&limit=200`);
+      setClassStudents(res.data?.data || []);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to load class students');
+    } finally {
+      setFetchingClassStudents(false);
     }
+  };
 
-    if (isAddingNewChild) {
-      if (!newChildName.trim()) {
-        Alert.alert('Missing Field', 'Please enter the name of the new child.');
-        return;
-      }
-    } else {
-      if (!selectedMemberId) {
-        Alert.alert('Missing Selection', 'Please select a child from the family list or add a new child.');
-        return;
-      }
+  // 1. Create Class
+  const handleCreateClass = async () => {
+    if (!newClassName.trim()) {
+      Alert.alert('Missing Class Name', 'Please enter a name for the class.');
+      return;
     }
 
     try {
-      setLoading(true);
+      setActionLoading(true);
       const payload: any = {
-        familyId: selectedFamilyId,
-        classId: selectedClassId,
-        admissionNo: admissionNo.trim() || undefined,
+        name: newClassName.trim(),
+        level: parseInt(newClassLevel, 10) || 1,
+        academicYear: newClassYear.trim() || '2026-2027',
+        subjects: newClassSubjects
+          ? newClassSubjects.split(',').map((s) => s.trim()).filter(Boolean)
+          : [],
       };
-
-      if (isAddingNewChild) {
-        payload.name = newChildName.trim();
-        payload.gender = newChildGender;
-        payload.relationship = newChildRelationship;
-      } else {
-        payload.memberId = selectedMemberId;
+      if (newClassTeacherId) {
+        payload.teacherId = newClassTeacherId;
       }
 
-      await api.post('/mobile/sadar/students', payload);
+      const res = await apiClient.post('/classes', payload);
+      const createdClass = res.data?.data;
+      if (createdClass) {
+        setClasses((prev) => {
+          const filtered = prev.filter((c) => c._id !== createdClass._id);
+          return [createdClass, ...filtered];
+        });
+      }
+
+      Alert.alert('Success 🎉', 'Madrasa class created successfully! (ക്ലാസ് വിജയകരമായി ചേർത്തു)');
+      setShowCreateClassModal(false);
+      setNewClassName('');
+      setNewClassTeacherId('');
+      await loadData();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to create class');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 2. Select Usthadh from List (Teacher or Member)
+  const handleSelectUsthadh = async (item: { teacherId?: string; memberId?: string; name: string; phone?: string }) => {
+    try {
+      setActionLoading(true);
+      let teacherId = item.teacherId;
+
+      // If user selected a Mahallu Member who is not registered as a teacher yet, create teacher record
+      if (!teacherId && item.memberId) {
+        const createTeacherRes = await apiClient.post('/teachers', {
+          memberId: item.memberId,
+          qualification: 'Usthadh / Teacher',
+          salary: 0,
+        });
+        teacherId = createTeacherRes.data?.data?._id;
+        await loadData();
+      }
+
+      if (!teacherId) {
+        Alert.alert('Error', 'Could not select teacher');
+        return;
+      }
+
+      if (usthadhPickerMode === 'create_class') {
+        setNewClassTeacherId(teacherId);
+        setShowUsthadhPickerModal(false);
+      } else if (usthadhPickerMode === 'change_class_usthadh' && selectedClass) {
+        await apiClient.put(`/classes/${selectedClass._id}`, { teacherId });
+        Alert.alert('Success 🎉', 'Class Usthadh updated successfully!');
+        setShowUsthadhPickerModal(false);
+        await loadData();
+        const updatedTeacher = teachers.find((t) => t._id === teacherId);
+        setSelectedClass((prev: any) => ({ ...prev, teacherId: updatedTeacher || { name: item.name } }));
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to set Usthadh');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 3. Create New Usthadh On-The-Fly with Login ID & Password
+  const handleCreateNewUsthadh = async () => {
+    if (!newUsthadhName.trim()) {
+      Alert.alert('Missing Name', 'Please enter Usthadh name.');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const res = await apiClient.post('/teachers', {
+        name: newUsthadhName.trim(),
+        email: newUsthadhEmail.trim() || undefined,
+        password: newUsthadhPassword.trim() || undefined,
+        phone: newUsthadhPhone.trim() || undefined,
+        qualification: newUsthadhQualification.trim() || 'Islamic Scholar / Usthadh',
+        salary: 0,
+      });
+
+      const newTeacher = res.data?.data;
+      const newTeacherId = newTeacher?._id;
+
+      if (newTeacher) {
+        setTeachers((prev) => [newTeacher, ...prev]);
+      }
+
+      Alert.alert(
+        'Success 🎉',
+        `Usthadh ${newUsthadhName} created!\nLogin ID: ${newUsthadhEmail.trim() || newUsthadhPhone.trim() || 'Auto'}\nPassword: ${newUsthadhPassword.trim() || 'Usthadh@123456'}`
+      );
+      setNewUsthadhName('');
+      setNewUsthadhEmail('');
+      setNewUsthadhPassword('');
+      setNewUsthadhPhone('');
+      setUsthadhSubTab('search');
+      setShowUsthadhPickerModal(false);
+
+      if (usthadhPickerMode === 'create_class') {
+        setNewClassTeacherId(newTeacherId);
+      } else if (usthadhPickerMode === 'change_class_usthadh' && selectedClass) {
+        await apiClient.put(`/classes/${selectedClass._id}`, { teacherId: newTeacherId });
+        setSelectedClass((prev: any) => ({ ...prev, teacherId: newTeacher }));
+      }
+      await loadData();
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to create new Usthadh');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 4. Enrol Students from Selected Family to Class
+  const handleEnrolFamilyChildren = async () => {
+    if (!selectedClass || !selectedFamilyForClass || selectedFamilyMemberIds.length === 0) {
+      Alert.alert('Selection Missing', 'Please select at least one child from the family.');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const guardianId = selectedFamilyForClass.headMemberId?._id || selectedFamilyForClass.headMemberId;
+
+      await Promise.all(
+        selectedFamilyMemberIds.map((memberId) =>
+          apiClient.post('/students', {
+            memberId,
+            classId: selectedClass._id,
+            familyId: selectedFamilyForClass._id,
+            guardianId,
+            status: 'active',
+          })
+        )
+      );
+
+      Alert.alert('Success 🎉', 'Children enrolled into class successfully!');
+      setShowAddStudentsModal(false);
+      setSelectedFamilyForClass(null);
+      setSelectedFamilyMemberIds([]);
+      await loadData();
+      handleOpenClassDetails(selectedClass);
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to enrol children');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 5. Assign Existing Students to Class
+  const handleAssignExistingStudents = async () => {
+    if (!selectedClass || selectedExistingStudentIds.length === 0) return;
+
+    try {
+      setActionLoading(true);
+      await Promise.all(
+        selectedExistingStudentIds.map((id) =>
+          apiClient.put(`/students/${id}`, { classId: selectedClass._id })
+        )
+      );
+
+      Alert.alert('Success 🎉', 'Assigned students to class!');
+      setShowAddStudentsModal(false);
+      setSelectedExistingStudentIds([]);
+      await loadData();
+      handleOpenClassDetails(selectedClass);
+    } catch (err: any) {
+      Alert.alert('Error', err.response?.data?.message || 'Failed to assign students');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 6. Remove Student from Class
+  const handleRemoveStudentFromClass = async (studentId: string, studentName: string) => {
+    Alert.alert(
+      'Remove Student',
+      `Are you sure you want to remove ${studentName || 'this student'} from ${selectedClass?.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiClient.put(`/students/${studentId}`, { classId: null });
+              setClassStudents((prev) => prev.filter((s) => s._id !== studentId));
+              loadData();
+            } catch (err) {
+              Alert.alert('Error', 'Failed to remove student from class');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Filtered families for search
+  const filteredFamilies = families.filter((f) => {
+    const q = familySearchQuery.toLowerCase();
+    const code = f.familyCode?.toLowerCase() || '';
+    const head = f.headMemberId?.name?.toLowerCase() || f.headName?.toLowerCase() || '';
+    const house = f.address?.line1?.toLowerCase() || '';
+    const ward = f.wardNo?.toLowerCase() || '';
+    return code.includes(q) || head.includes(q) || house.includes(q) || ward.includes(q);
+  });
+
+  // Filtered Usthadhs and Members for Usthadh Search
+  const filteredTeachers = teachers.filter((t) => {
+    const q = usthadhSearchQuery.toLowerCase();
+    const name = t.memberId?.name?.toLowerCase() || t.name?.toLowerCase() || '';
+    const phone = t.memberId?.phone?.toLowerCase() || t.phone?.toLowerCase() || '';
+    return name.includes(q) || phone.includes(q);
+  });
+
+  const filteredMembers = members.filter((m) => {
+    const q = usthadhSearchQuery.toLowerCase();
+    const name = m.name?.toLowerCase() || '';
+    const phone = m.phone?.toLowerCase() || '';
+    const isAlreadyTeacher = teachers.some((t) => (t.memberId?._id || t.memberId) === m._id);
+    return !isAlreadyTeacher && (name.includes(q) || phone.includes(q));
+  });
+
+  // Quick enroll family members fetcher
+  const handleSelectQuickFamily = async (fam: any) => {
+    setEnrollFamilyId(fam._id);
+    setEnrollMemberId('');
+    setShowEnrollFamilyModal(false);
+
+    try {
+      setFetchingEnrollMembers(true);
+      const res = await apiClient.get(`/families/${fam._id}`);
+      const famData = res.data?.data;
+      setEnrollFamilyMembers(famData?.members || fam.members || []);
+    } catch {
+      setEnrollFamilyMembers(fam.members || []);
+    } finally {
+      setFetchingEnrollMembers(false);
+    }
+  };
+
+  // Quick single-student enrollment submit
+  const handleQuickEnrollSubmit = async () => {
+    if (!enrollFamilyId) {
+      Alert.alert('Missing Selection', 'Please select a Family.');
+      return;
+    }
+    if (!enrollMemberId) {
+      Alert.alert('Missing Selection', 'Please select a child/member from the family.');
+      return;
+    }
+    if (!enrollClassId) {
+      Alert.alert('Missing Selection', 'Please select a Class.');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const fam = families.find((f) => f._id === enrollFamilyId);
+      const guardianId = fam?.headMemberId?._id || fam?.headMemberId;
+
+      await apiClient.post('/students', {
+        memberId: enrollMemberId,
+        familyId: enrollFamilyId,
+        classId: enrollClassId,
+        guardianId,
+        admissionNo: enrollAdmissionNo.trim() || undefined,
+        status: 'active',
+      });
 
       Alert.alert('Success 🎉', 'Student successfully enrolled in Madrasa class!', [
         {
-          text: 'Great',
+          text: 'OK',
           onPress: () => {
-            setSelectedFamilyId('');
-            setSelectedMemberId('');
-            setSelectedClassId('');
-            setAdmissionNo('');
-            setIsAddingNewChild(false);
-            setNewChildName('');
-            router.back();
+            setEnrollMemberId('');
+            setEnrollAdmissionNo('');
+            loadData();
+            setActiveMainTab('classes');
           },
         },
       ]);
     } catch (err: any) {
       Alert.alert('Enrollment Error', err.response?.data?.message || 'Failed to enroll student.');
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
-  const selectedFamily = families.find(f => f._id === selectedFamilyId);
-  const selectedClass = classes.find(c => c._id === selectedClassId);
-  const selectedMember = familyMembers.find(m => m._id === selectedMemberId);
-
-  // Filter family search
-  const filteredFamilies = families.filter(f => 
-    f.headName?.toLowerCase().includes(familySearchQuery.toLowerCase()) ||
-    f.familyCode?.toLowerCase().includes(familySearchQuery.toLowerCase())
-  );
-
-  // Helper to test if a member is a child/dependent
-  const isChildMember = (m: any) => {
-    const rel = (m.relationship || '').toLowerCase();
-    return rel.includes('child') || rel.includes('son') || rel.includes('daughter') || rel.includes('dependent') || rel.includes('grandson') || rel.includes('granddaughter');
-  };
-
-  const childrenList = familyMembers.filter(isChildMember);
-  const otherMembersList = familyMembers.filter(m => !isChildMember(m));
+  const assignedUsthadhName =
+    teachers.find((t) => t._id === newClassTeacherId)?.memberId?.name ||
+    teachers.find((t) => t._id === newClassTeacherId)?.name;
 
   if (fetchingData) {
     return (
       <View style={{ flex: 1, backgroundColor: CREAM, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator size="large" color={TEAL} />
-        <Text style={{ marginTop: 12, color: TEAL_DARK, fontWeight: '600' }}>Loading enrollment portal...</Text>
+        <Text style={{ marginTop: 12, color: TEAL_DARK, fontWeight: '700' }}>Loading Sadar Mualim Panel...</Text>
       </View>
     );
   }
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: CREAM }}>
-      {/* Header */}
-      <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderColor: '#f1ebd9', backgroundColor: 'white' }}>
-        <TouchableOpacity onPress={() => router.back()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-          <Ionicons name="arrow-back" size={20} color={TEAL_DARK} />
-        </TouchableOpacity>
-        <View>
-          <Text style={{ fontSize: 20, fontWeight: '900', color: TEAL_DARK, letterSpacing: -0.5 }}>Sadar Mualim Panel</Text>
-          <Text style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>Enroll family children to Madrasa classes</Text>
+      {/* Top Header */}
+      <View
+        style={{
+          paddingHorizontal: 20,
+          paddingTop: 14,
+          paddingBottom: 14,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottomWidth: 1,
+          borderColor: '#f1ebd9',
+          backgroundColor: 'white',
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: '#f8fafc',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 12,
+            }}
+          >
+            <Ionicons name="arrow-back" size={20} color={TEAL_DARK} />
+          </TouchableOpacity>
+          <View>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: TEAL_DARK }}>{t('sadarMualimPanel', language)}</Text>
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>{language === 'en' ? 'Sadar Mualim & Madrasa Management' : 'സദർ മുഅല്ലിം & മദ്രസ മാനേജ്‌മെന്റ്'}</Text>
+          </View>
         </View>
+
+        {activeMainTab === 'classes' && (
+          <TouchableOpacity
+            onPress={() => setShowCreateClassModal(true)}
+            style={{
+              backgroundColor: TEAL,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderRadius: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}
+          >
+            <Ionicons name="add" size={16} color="white" style={{ marginRight: 4 }} />
+            <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>{t('newClass', language)}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20 }}>
-        <View style={{ gap: 20 }}>
+      {/* Main Tab Switcher */}
+      <View style={{ flexDirection: 'row', padding: 12, backgroundColor: 'white', borderBottomWidth: 1, borderColor: '#f1ebd9', gap: 8 }}>
+        <TouchableOpacity
+          onPress={() => setActiveMainTab('classes')}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            borderRadius: 12,
+            alignItems: 'center',
+            backgroundColor: activeMainTab === 'classes' ? TEAL : '#f8fafc',
+          }}
+        >
+          <Text style={{ color: activeMainTab === 'classes' ? 'white' : '#64748b', fontWeight: '800', fontSize: 13 }}>
+            📚 {t('classesAndUsthadhs', language)} ({classes.length})
+          </Text>
+        </TouchableOpacity>
 
-          {/* STEP 1: SELECT FAMILY */}
-          <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#ebdcb9' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: TEAL, alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>1</Text>
-              </View>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: TEAL_DARK }}>Select Family *</Text>
+        <TouchableOpacity
+          onPress={() => setActiveMainTab('enroll')}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            borderRadius: 12,
+            alignItems: 'center',
+            backgroundColor: activeMainTab === 'enroll' ? TEAL : '#f8fafc',
+          }}
+        >
+          <Text style={{ color: activeMainTab === 'enroll' ? 'white' : '#64748b', fontWeight: '800', fontSize: 13 }}>
+            🏠 {t('familyEnrolment', language)}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ========================================================================= */}
+      {/* TAB 1: CLASSES & USTHADHS */}
+      {/* ========================================================================= */}
+      {activeMainTab === 'classes' && (
+        <ScrollView
+          contentContainerStyle={{ padding: 16, gap: 14 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={TEAL} />}
+        >
+          {classes.length === 0 ? (
+            <View style={{ padding: 40, alignItems: 'center', backgroundColor: 'white', borderRadius: 20, borderWidth: 1, borderColor: '#ebdcb9' }}>
+              <Ionicons name="book-outline" size={44} color="#94a3b8" />
+              <Text style={{ fontSize: 16, fontWeight: '800', color: TEAL_DARK, marginTop: 12 }}>{t('noClassesCreated', language)}</Text>
+              <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginTop: 4, marginBottom: 16 }}>
+                {t('noClassesDesc', language)}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowCreateClassModal(true)}
+                style={{ backgroundColor: TEAL, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 14 }}
+              >
+                <Text style={{ color: 'white', fontWeight: '800', fontSize: 13 }}>+ {t('createClassNow', language)}</Text>
+              </TouchableOpacity>
             </View>
+          ) : (
+            classes.map((cls) => {
+              const teacher = cls.teacherId?.memberId?.name || (typeof cls.teacherId === 'object' ? cls.teacherId?.name : null);
+              const teacherPhone = cls.teacherId?.memberId?.phone || null;
 
+              return (
+                <TouchableOpacity
+                  key={cls._id}
+                  activeOpacity={0.85}
+                  onPress={() => handleOpenClassDetails(cls)}
+                  style={{
+                    backgroundColor: 'white',
+                    borderRadius: 20,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: '#ebdcb9',
+                    shadowColor: TEAL_DARK,
+                    shadowOpacity: 0.05,
+                    shadowRadius: 10,
+                    elevation: 2,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={{ fontSize: 17, fontWeight: '900', color: TEAL_DARK }}>{cls.name}</Text>
+                      <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                        Level {cls.level} • Academic Year: {cls.academicYear || '2026-2027'}
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        backgroundColor: '#ecfdf5',
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: '#a7f3d0',
+                      }}
+                    >
+                      <Text style={{ color: TEAL, fontWeight: '800', fontSize: 11 }}>Manage Class</Text>
+                    </View>
+                  </View>
+
+                  {/* Usthadh Row */}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#f8fafc',
+                      padding: 10,
+                      borderRadius: 12,
+                      marginTop: 12,
+                    }}
+                  >
+                    <Ionicons name="person" size={16} color={TEAL} style={{ marginRight: 6 }} />
+                    <Text style={{ fontSize: 12, color: '#475569', flex: 1 }}>
+                      Usthadh: <Text style={{ fontWeight: '700', color: '#0f172a' }}>{teacher || 'Not Assigned'}</Text>
+                    </Text>
+                    {teacherPhone && (
+                      <Text style={{ fontSize: 11, color: '#64748b' }}>📞 {teacherPhone}</Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: QUICK FAMILY ENROLLMENT */}
+      {/* ========================================================================= */}
+      {activeMainTab === 'enroll' && (
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+          {/* Step 1: Select Family */}
+          <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#ebdcb9' }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: TEAL_DARK, marginBottom: 8 }}>
+              1. Select Family (കുടുംബം തിരഞ്ഞെടുക്കുക) *
+            </Text>
             <TouchableOpacity
-              onPress={() => setShowFamilyModal(true)}
-              style={{ backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: selectedFamilyId ? TEAL : '#e2e8f0', borderRadius: 16, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+              onPress={() => setShowEnrollFamilyModal(true)}
+              style={{
+                backgroundColor: '#f8fafc',
+                borderWidth: 1.5,
+                borderColor: enrollFamilyId ? TEAL : '#e2e8f0',
+                borderRadius: 14,
+                padding: 14,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
             >
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={{ color: selectedFamilyId ? '#0f172a' : '#94a3b8', fontSize: 15, fontWeight: selectedFamilyId ? '700' : 'normal' }}>
-                  {selectedFamilyId 
-                    ? `${selectedFamily?.headName} (${selectedFamily?.familyCode})`
-                    : 'Search & Pick Family from List'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-down" size={20} color={TEAL} />
+              <Text style={{ color: enrollFamilyId ? '#0f172a' : '#94a3b8', fontSize: 14, fontWeight: enrollFamilyId ? '700' : 'normal' }}>
+                {enrollFamilyId
+                  ? `${families.find((f) => f._id === enrollFamilyId)?.familyCode} - ${families.find((f) => f._id === enrollFamilyId)?.headMemberId?.name || 'Head'}`
+                  : 'Search & Pick Family from List'}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color={TEAL} />
             </TouchableOpacity>
           </View>
 
-          {/* STEP 2: SELECT CHILD / MEMBER IN FAMILY */}
-          {selectedFamilyId ? (
-            <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#ebdcb9' }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: TEAL, alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                    <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>2</Text>
-                  </View>
-                  <Text style={{ fontSize: 16, fontWeight: 'bold', color: TEAL_DARK }}>Select Student / Child *</Text>
-                </View>
-
-                {/* Option to toggle on-the-fly child creation */}
-                <TouchableOpacity 
-                  onPress={() => {
-                    setIsAddingNewChild(!isAddingNewChild);
-                    setSelectedMemberId('');
-                  }}
-                  style={{ backgroundColor: isAddingNewChild ? '#fee2e2' : '#ecfdf5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 }}
-                >
-                  <Text style={{ color: isAddingNewChild ? '#ef4444' : TEAL, fontWeight: 'bold', fontSize: 12 }}>
-                    {isAddingNewChild ? 'Cancel' : '+ New Child'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {fetchingMembers ? (
-                <View style={{ padding: 20, alignItems: 'center' }}>
-                  <ActivityIndicator color={TEAL} />
-                  <Text style={{ color: '#64748b', marginTop: 8, fontSize: 13 }}>Fetching family members...</Text>
-                </View>
-              ) : isAddingNewChild ? (
-                /* Form to add a new child directly to this family */
-                <View style={{ backgroundColor: '#f8fafc', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#cbd5e1', gap: 12 }}>
-                  <Text style={{ fontWeight: 'bold', color: TEAL_DARK, fontSize: 14 }}>Add New Child to {selectedFamily?.headName}'s Family</Text>
-                  
-                  <TextInput
-                    style={{ backgroundColor: 'white', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, padding: 14, color: '#0f172a', fontSize: 15 }}
-                    placeholder="Child's Full Name"
-                    placeholderTextColor="#94a3b8"
-                    value={newChildName}
-                    onChangeText={setNewChildName}
-                  />
-
-                  {/* Gender selection */}
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    {(['male', 'female'] as const).map((g) => (
-                      <TouchableOpacity
-                        key={g}
-                        onPress={() => setNewChildGender(g)}
-                        style={{
-                          flex: 1,
-                          paddingVertical: 10,
-                          borderRadius: 12,
-                          backgroundColor: newChildGender === g ? TEAL : 'white',
-                          borderWidth: 1,
-                          borderColor: newChildGender === g ? TEAL : '#cbd5e1',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <Text style={{ color: newChildGender === g ? 'white' : '#475569', fontWeight: 'bold', fontSize: 13, textTransform: 'capitalize' }}>
-                          {g}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  {/* Relationship options */}
-                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                    {['Son', 'Daughter', 'Child'].map((rel) => (
-                      <TouchableOpacity
-                        key={rel}
-                        onPress={() => setNewChildRelationship(rel)}
-                        style={{
-                          paddingHorizontal: 14,
-                          paddingVertical: 8,
-                          borderRadius: 20,
-                          backgroundColor: newChildRelationship === rel ? GOLD : 'white',
-                          borderWidth: 1,
-                          borderColor: newChildRelationship === rel ? GOLD : '#cbd5e1',
-                        }}
-                      >
-                        <Text style={{ color: newChildRelationship === rel ? 'white' : '#475569', fontWeight: 'bold', fontSize: 12 }}>
-                          {rel}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
+          {/* Step 2: Select Child / Member */}
+          {enrollFamilyId && (
+            <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#ebdcb9' }}>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: TEAL_DARK, marginBottom: 8 }}>
+                2. Select Child / Member to Enroll *
+              </Text>
+              {fetchingEnrollMembers ? (
+                <ActivityIndicator color={TEAL} style={{ padding: 12 }} />
+              ) : enrollFamilyMembers.length === 0 ? (
+                <Text style={{ fontSize: 12, color: '#64748b' }}>No members in this family.</Text>
               ) : (
-                /* Select existing member/child from list */
-                <View style={{ gap: 10 }}>
-                  {childrenList.length > 0 && (
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: GOLD, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      Children & Dependents in Family
-                    </Text>
-                  )}
-
-                  {childrenList.map((m) => {
-                    const isSelected = selectedMemberId === m._id;
+                <View style={{ gap: 8 }}>
+                  {enrollFamilyMembers.map((m: any) => {
+                    const member = m.memberId || m;
+                    const isSelected = enrollMemberId === (member._id || m.memberId);
                     return (
                       <TouchableOpacity
-                        key={m._id}
-                        onPress={() => setSelectedMemberId(m._id)}
+                        key={member._id || m.memberId}
+                        onPress={() => setEnrollMemberId(member._id || m.memberId)}
                         style={{
                           flexDirection: 'row',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          backgroundColor: isSelected ? '#ecfdf5' : '#f8fafc',
+                          padding: 12,
+                          borderRadius: 12,
                           borderWidth: 1.5,
                           borderColor: isSelected ? TEAL : '#e2e8f0',
-                          padding: 12,
-                          borderRadius: 16,
+                          backgroundColor: isSelected ? '#f0fdf4' : '#f8fafc',
                         }}
                       >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                          <Avatar uri={null} name={m.name} size={36} />
-                          <View style={{ marginLeft: 12, flex: 1 }}>
-                            <Text style={{ fontWeight: 'bold', color: '#0f172a', fontSize: 15 }}>{m.name}</Text>
-                            <Text style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>{m.relationship} • {m.gender}</Text>
-                          </View>
+                        <View>
+                          <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>{member.name}</Text>
+                          <Text style={{ fontSize: 11, color: '#64748b' }}>
+                            {m.relationship || 'Member'} {member.gender ? `• ${member.gender}` : ''}
+                          </Text>
                         </View>
-
-                        {m.isEnrolledStudent ? (
-                          <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 }}>
-                            <Text style={{ color: GOLD, fontWeight: 'bold', fontSize: 11 }}>
-                              {m.enrolledClassName || 'Enrolled'}
-                            </Text>
-                          </View>
-                        ) : (
-                          <Ionicons 
-                            name={isSelected ? 'checkmark-circle' : 'radio-button-off'} 
-                            size={24} 
-                            color={isSelected ? TEAL : '#cbd5e1'} 
-                          />
-                        )}
+                        {isSelected && <Ionicons name="checkmark-circle" size={20} color={TEAL} />}
                       </TouchableOpacity>
                     );
                   })}
-
-                  {otherMembersList.length > 0 && (
-                    <>
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8 }}>
-                        Other Family Members
-                      </Text>
-                      {otherMembersList.map((m) => {
-                        const isSelected = selectedMemberId === m._id;
-                        return (
-                          <TouchableOpacity
-                            key={m._id}
-                            onPress={() => setSelectedMemberId(m._id)}
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              backgroundColor: isSelected ? '#ecfdf5' : '#f8fafc',
-                              borderWidth: 1.5,
-                              borderColor: isSelected ? TEAL : '#e2e8f0',
-                              padding: 12,
-                              borderRadius: 16,
-                            }}
-                          >
-                            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                              <Avatar uri={null} name={m.name} size={36} />
-                              <View style={{ marginLeft: 12, flex: 1 }}>
-                                <Text style={{ fontWeight: 'bold', color: '#0f172a', fontSize: 15 }}>{m.name}</Text>
-                                <Text style={{ fontSize: 12, color: '#64748b', marginTop: 1 }}>{m.relationship}</Text>
-                              </View>
-                            </View>
-
-                            <Ionicons 
-                              name={isSelected ? 'checkmark-circle' : 'radio-button-off'} 
-                              size={24} 
-                              color={isSelected ? TEAL : '#cbd5e1'} 
-                            />
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </>
-                  )}
                 </View>
               )}
             </View>
-          ) : null}
+          )}
 
-          {/* STEP 3: SELECT CLASS */}
-          <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#ebdcb9' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: TEAL, alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>3</Text>
-              </View>
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: TEAL_DARK }}>Select Madrasa Class *</Text>
-            </View>
-
+          {/* Step 3: Select Class */}
+          <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#ebdcb9' }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: TEAL_DARK, marginBottom: 8 }}>
+              3. Select Madrasa Class (ക്ലാസ്) *
+            </Text>
             <TouchableOpacity
-              onPress={() => setShowClassModal(true)}
-              style={{ backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: selectedClassId ? TEAL : '#e2e8f0', borderRadius: 16, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+              onPress={() => setShowEnrollClassModal(true)}
+              style={{
+                backgroundColor: '#f8fafc',
+                borderWidth: 1.5,
+                borderColor: enrollClassId ? TEAL : '#e2e8f0',
+                borderRadius: 14,
+                padding: 14,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
             >
-              <Text style={{ color: selectedClassId ? '#0f172a' : '#94a3b8', fontSize: 15, fontWeight: selectedClassId ? '700' : 'normal' }}>
-                {selectedClassId ? selectedClass?.name : 'Pick Target Class'}
+              <Text style={{ color: enrollClassId ? '#0f172a' : '#94a3b8', fontSize: 14, fontWeight: enrollClassId ? '700' : 'normal' }}>
+                {enrollClassId
+                  ? classes.find((c) => c._id === enrollClassId)?.name || 'Class'
+                  : 'Select Class from List'}
               </Text>
-              <Ionicons name="chevron-down" size={20} color={TEAL} />
+              <Ionicons name="chevron-down" size={18} color={TEAL} />
             </TouchableOpacity>
           </View>
 
-          {/* Admission Number Optional */}
-          <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#ebdcb9' }}>
-            <Text style={{ color: TEAL_DARK, marginBottom: 8, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>Admission Number (Optional)</Text>
+          {/* Admission Number */}
+          <View style={{ backgroundColor: 'white', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#ebdcb9' }}>
+            <Text style={{ fontSize: 14, fontWeight: '800', color: TEAL_DARK, marginBottom: 8 }}>
+              4. Admission No (Optional / Auto-generated)
+            </Text>
             <TextInput
-              style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16, padding: 16, color: '#0f172a', fontSize: 15 }}
-              placeholder="Auto-generated if left blank"
-              placeholderTextColor="#94a3b8"
-              value={admissionNo}
-              onChangeText={setAdmissionNo}
+              placeholder="e.g. STD0012 (leave blank to auto-generate)"
+              value={enrollAdmissionNo}
+              onChangeText={setEnrollAdmissionNo}
+              style={{
+                backgroundColor: '#f8fafc',
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                borderRadius: 12,
+                padding: 12,
+                fontSize: 14,
+                color: '#0f172a',
+              }}
             />
           </View>
 
-          {/* Submit Button */}
-          <TouchableOpacity 
-            onPress={handleSubmit}
-            disabled={loading}
-            style={{ backgroundColor: TEAL, padding: 18, borderRadius: 16, alignItems: 'center', marginTop: 8, opacity: loading ? 0.7 : 1, shadowColor: TEAL_DARK, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 12, elevation: 4 }}
+          {/* Submit Enroll Button */}
+          <TouchableOpacity
+            onPress={handleQuickEnrollSubmit}
+            disabled={actionLoading}
+            style={{
+              backgroundColor: TEAL,
+              padding: 16,
+              borderRadius: 16,
+              alignItems: 'center',
+              shadowColor: TEAL,
+              shadowOpacity: 0.3,
+              shadowRadius: 10,
+              elevation: 3,
+              marginBottom: 30,
+            }}
           >
-            {loading ? <ActivityIndicator color="white" /> : <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 17 }}>Enroll Student</Text>}
+            {actionLoading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={{ color: 'white', fontWeight: '900', fontSize: 15 }}>Enrol Student to Madrasa (ചേർക്കുക)</Text>
+            )}
           </TouchableOpacity>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      )}
 
-      {/* Family Select Modal */}
-      <Modal visible={showFamilyModal} animationType="slide" transparent={true}>
+      {/* ========================================================================= */}
+      {/* MODAL: CLASS DETAILS & STUDENT MANAGEMENT */}
+      {/* ========================================================================= */}
+      <Modal visible={!!selectedClass} animationType="slide" transparent>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%', padding: 24 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 20, fontWeight: 'bold', color: TEAL_DARK }}>Select Family</Text>
-              <TouchableOpacity onPress={() => setShowFamilyModal(false)}>
-                <Ionicons name="close" size={24} color="#64748b" />
+          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28, height: '88%', padding: 20 }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 14, borderBottomWidth: 1, borderColor: '#f1ebd9' }}>
+              <View>
+                <Text style={{ fontSize: 20, fontWeight: '900', color: TEAL_DARK }}>{selectedClass?.name}</Text>
+                <Text style={{ fontSize: 12, color: '#64748b' }}>
+                  Level {selectedClass?.level} • {classStudents.length} Students Enrolled
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelectedClass(null)} style={{ padding: 6, backgroundColor: '#f1f5f9', borderRadius: 20 }}>
+                <Ionicons name="close" size={20} color="#64748b" />
               </TouchableOpacity>
             </View>
 
-            {/* Search Input */}
-            <View style={{ backgroundColor: '#f1f5f9', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-              <Ionicons name="search" size={18} color="#64748b" style={{ marginRight: 8 }} />
-              <TextInput
-                style={{ flex: 1, fontSize: 15, color: '#0f172a' }}
-                placeholder="Search by Family Head name or Code..."
-                placeholderTextColor="#94a3b8"
-                value={familySearchQuery}
-                onChangeText={setFamilySearchQuery}
-              />
-            </View>
+            <ScrollView contentContainerStyle={{ paddingVertical: 14, gap: 16 }}>
+              {/* Usthadh Section */}
+              <View style={{ backgroundColor: '#f8fafc', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: TEAL_DARK }}>Class Usthadh (ക്ലാസ് ഉസ്താദ്)</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setUsthadhPickerMode('change_class_usthadh');
+                      setUsthadhSearchQuery('');
+                      setUsthadhSubTab('search');
+                      setShowUsthadhPickerModal(true);
+                    }}
+                    style={{ backgroundColor: '#ecfdf5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 }}
+                  >
+                    <Text style={{ color: TEAL, fontWeight: '800', fontSize: 11 }}>
+                      {selectedClass?.teacherId ? 'Change Usthadh' : '+ Assign Usthadh'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
 
-            <FlatList
-              data={filteredFamilies}
-              keyExtractor={(item) => item._id}
-              renderItem={({ item }) => (
+                <Text style={{ fontSize: 15, fontWeight: '800', color: '#0f172a' }}>
+                  {selectedClass?.teacherId?.memberId?.name || selectedClass?.teacherId?.name || 'No Usthadh Assigned'}
+                </Text>
+                {selectedClass?.teacherId?.memberId?.phone && (
+                  <Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                    📞 {selectedClass.teacherId.memberId.phone}
+                  </Text>
+                )}
+              </View>
+
+              {/* Students Header & Actions */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '900', color: TEAL_DARK }}>
+                  Enrolled Students ({classStudents.length})
+                </Text>
                 <TouchableOpacity
-                  onPress={() => handleSelectFamily(item._id)}
-                  style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}
+                  onPress={() => {
+                    setAddStudentsTab('family');
+                    setShowAddStudentsModal(true);
+                  }}
+                  style={{
+                    backgroundColor: TEAL,
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                    borderRadius: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                  }}
                 >
-                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#0f172a' }}>{item.headName}</Text>
-                  <Text style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>Code: {item.familyCode}</Text>
+                  <Ionicons name="add" size={16} color="white" style={{ marginRight: 4 }} />
+                  <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>+ Add Students</Text>
                 </TouchableOpacity>
+              </View>
+
+              {/* Students List */}
+              {fetchingClassStudents ? (
+                <ActivityIndicator color={TEAL} style={{ padding: 20 }} />
+              ) : classStudents.length === 0 ? (
+                <View style={{ padding: 30, alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 16 }}>
+                  <Ionicons name="school-outline" size={36} color="#94a3b8" />
+                  <Text style={{ color: '#64748b', fontWeight: '700', fontSize: 13, marginTop: 8 }}>No students enrolled yet</Text>
+                  <Text style={{ color: '#94a3b8', fontSize: 11, textAlign: 'center', marginTop: 2 }}>
+                    Tap "+ Add Students" to select children from Mahallu families.
+                  </Text>
+                </View>
+              ) : (
+                classStudents.map((std) => (
+                  <View
+                    key={std._id}
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: 12,
+                      backgroundColor: 'white',
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: '#e2e8f0',
+                    }}
+                  >
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>
+                        {std.memberId?.name || 'Student'}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                        Adm: <Text style={{ fontWeight: '700', color: '#0f172a' }}>{std.admissionNo}</Text>
+                        {std.familyId?.familyCode ? ` • Family: ${std.familyId.familyCode}` : ''}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => handleRemoveStudentFromClass(std._id, std.memberId?.name)}
+                      style={{ padding: 6, backgroundColor: '#fee2e2', borderRadius: 10 }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
+                ))
               )}
-            />
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* Class Select Modal */}
-      <Modal visible={showClassModal} animationType="slide" transparent={true}>
+      {/* ========================================================================= */}
+      {/* MODAL: CREATE CLASS */}
+      {/* ========================================================================= */}
+      <Modal visible={showCreateClassModal} animationType="slide" transparent>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%', padding: 24 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 20, fontWeight: 'bold', color: TEAL_DARK }}>Select Class</Text>
-              <TouchableOpacity onPress={() => setShowClassModal(false)}>
-                <Ionicons name="close" size={24} color="#64748b" />
+          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: '85%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottomWidth: 1, borderColor: '#f1ebd9' }}>
+              <Text style={{ fontSize: 18, fontWeight: '900', color: TEAL_DARK }}>Create Madrasa Class</Text>
+              <TouchableOpacity onPress={() => setShowCreateClassModal(false)}>
+                <Ionicons name="close" size={20} color="#64748b" />
               </TouchableOpacity>
             </View>
-            <FlatList
-              data={classes}
-              keyExtractor={(item) => item._id}
-              renderItem={({ item }) => (
+
+            <ScrollView contentContainerStyle={{ paddingVertical: 14, gap: 12 }}>
+              <View>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>Class Name (പേര്) *</Text>
+                <TextInput
+                  placeholder="e.g. Class 1 A / ഒന്നാം ക്ലാസ്"
+                  value={newClassName}
+                  onChangeText={setNewClassName}
+                  style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                />
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>Level (1-12) *</Text>
+                  <TextInput
+                    placeholder="1"
+                    keyboardType="numeric"
+                    value={newClassLevel}
+                    onChangeText={setNewClassLevel}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>Academic Year *</Text>
+                  <TextInput
+                    placeholder="2026-2027"
+                    value={newClassYear}
+                    onChangeText={setNewClassYear}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+              </View>
+
+              {/* Usthadh Selection Field */}
+              <View>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                  Assign Class Usthadh (ഉസ്താദിനെ തിരഞ്ഞെടുക്കുക)
+                </Text>
                 <TouchableOpacity
                   onPress={() => {
-                    setSelectedClassId(item._id);
-                    setShowClassModal(false);
+                    setUsthadhPickerMode('create_class');
+                    setUsthadhSearchQuery('');
+                    setUsthadhSubTab('search');
+                    setShowUsthadhPickerModal(true);
                   }}
-                  style={{ paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }}
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    borderWidth: 1.5,
+                    borderColor: newClassTeacherId ? TEAL : '#e2e8f0',
+                    borderRadius: 12,
+                    padding: 12,
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
                 >
-                  <Text style={{ fontSize: 16, fontWeight: '600', color: '#0f172a' }}>{item.name}</Text>
-                  {item.level && <Text style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>Level: {item.level}</Text>}
+                  <Text style={{ color: newClassTeacherId ? '#0f172a' : '#94a3b8', fontSize: 14, fontWeight: newClassTeacherId ? '800' : 'normal' }}>
+                    {assignedUsthadhName ? `Usthadh: ${assignedUsthadhName}` : '🔍 Search Members or Add New Usthadh'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color={TEAL} />
                 </TouchableOpacity>
-              )}
+              </View>
+
+              <View>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>Subjects (വിഷയങ്ങൾ)</Text>
+                <TextInput
+                  placeholder="Quran, Fiqh, Arabic, Thareekh"
+                  value={newClassSubjects}
+                  onChangeText={setNewClassSubjects}
+                  style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                />
+              </View>
+
+              <TouchableOpacity
+                onPress={handleCreateClass}
+                disabled={actionLoading}
+                style={{ backgroundColor: TEAL, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 10 }}
+              >
+                {actionLoading ? <ActivityIndicator color="white" /> : <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>Create Class (ക്ലാസ് ചേർക്കുക)</Text>}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* UNIFIED MODAL: SEARCH USTHADHS / MEMBERS & ADD NEW USTHADH */}
+      {/* ========================================================================= */}
+      <Modal visible={showUsthadhPickerModal} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28, height: '85%', padding: 20 }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottomWidth: 1, borderColor: '#f1ebd9' }}>
+              <Text style={{ fontSize: 17, fontWeight: '900', color: TEAL_DARK }}>Choose / Add Usthadh</Text>
+              <TouchableOpacity onPress={() => setShowUsthadhPickerModal(false)}>
+                <Ionicons name="close" size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Sub-tab Switcher */}
+            <View style={{ flexDirection: 'row', gap: 8, marginVertical: 12 }}>
+              <TouchableOpacity
+                onPress={() => setUsthadhSubTab('search')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  backgroundColor: usthadhSubTab === 'search' ? TEAL : '#f1f5f9',
+                }}
+              >
+                <Text style={{ color: usthadhSubTab === 'search' ? 'white' : '#64748b', fontWeight: '800', fontSize: 12 }}>
+                  🔍 Search Usthadhs & Members
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setUsthadhSubTab('new')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  backgroundColor: usthadhSubTab === 'new' ? TEAL : '#f1f5f9',
+                }}
+              >
+                <Text style={{ color: usthadhSubTab === 'new' ? 'white' : '#64748b', fontWeight: '800', fontSize: 12 }}>
+                  + Add New Usthadh
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* SUB-TAB 1: SEARCH USTHADHS & MEMBERS */}
+            {usthadhSubTab === 'search' && (
+              <ScrollView contentContainerStyle={{ gap: 10 }}>
+                <TextInput
+                  placeholder="Search Usthadh or Member by name or phone..."
+                  value={usthadhSearchQuery}
+                  onChangeText={setUsthadhSearchQuery}
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    borderWidth: 1,
+                    borderColor: '#e2e8f0',
+                    borderRadius: 12,
+                    padding: 10,
+                    fontSize: 13,
+                    color: '#0f172a',
+                    marginBottom: 6,
+                  }}
+                />
+
+                {/* Section 1: Registered Teachers */}
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginTop: 4 }}>
+                  Registered Usthadhs ({filteredTeachers.length})
+                </Text>
+                {filteredTeachers.length === 0 ? (
+                  <Text style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', paddingLeft: 4 }}>
+                    No registered teachers matching search.
+                  </Text>
+                ) : (
+                  filteredTeachers.map((t) => (
+                    <TouchableOpacity
+                      key={t._id}
+                      onPress={() =>
+                        handleSelectUsthadh({
+                          teacherId: t._id,
+                          name: t.memberId?.name || t.name,
+                          phone: t.memberId?.phone || t.phone,
+                        })
+                      }
+                      style={{
+                        padding: 12,
+                        borderRadius: 12,
+                        backgroundColor: '#f0fdf4',
+                        borderWidth: 1,
+                        borderColor: '#bbf7d0',
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <View>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>
+                          {t.memberId?.name || t.name || 'Usthadh'}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: '#64748b' }}>
+                          {t.qualification || 'Teacher'} {t.memberId?.phone ? `• 📞 ${t.memberId.phone}` : ''}
+                        </Text>
+                      </View>
+                      <View style={{ backgroundColor: TEAL, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                        <Text style={{ color: 'white', fontWeight: '800', fontSize: 10 }}>Select</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))
+                )}
+
+                {/* Section 2: Mahallu Members (can be selected as Usthadh) */}
+                <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginTop: 12 }}>
+                  Or Choose from Mahallu Members ({filteredMembers.slice(0, 15).length})
+                </Text>
+                {filteredMembers.slice(0, 15).map((m) => (
+                  <TouchableOpacity
+                    key={m._id}
+                    onPress={() =>
+                      handleSelectUsthadh({
+                        memberId: m._id,
+                        name: m.name,
+                        phone: m.phone,
+                      })
+                    }
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      backgroundColor: '#f8fafc',
+                      borderWidth: 1,
+                      borderColor: '#e2e8f0',
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <View>
+                      <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>{m.name}</Text>
+                      <Text style={{ fontSize: 11, color: '#64748b' }}>
+                        Member {m.phone ? `• 📞 ${m.phone}` : ''}
+                      </Text>
+                    </View>
+                    <View style={{ backgroundColor: '#e2e8f0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+                      <Text style={{ color: '#334155', fontWeight: '800', fontSize: 10 }}>Make Usthadh</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+
+                {/* Prompt to create new if not found */}
+                <TouchableOpacity
+                  onPress={() => setUsthadhSubTab('new')}
+                  style={{
+                    padding: 14,
+                    borderRadius: 14,
+                    borderWidth: 1.5,
+                    borderColor: TEAL,
+                    borderStyle: 'dashed',
+                    alignItems: 'center',
+                    marginTop: 10,
+                    marginBottom: 20,
+                  }}
+                >
+                  <Text style={{ color: TEAL, fontWeight: '800', fontSize: 13 }}>
+                    + Usthadh not in list? Add New Usthadh Here
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            {/* SUB-TAB 2: ADD NEW USTHADH */}
+            {usthadhSubTab === 'new' && (
+              <ScrollView contentContainerStyle={{ gap: 12, paddingVertical: 6 }}>
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Usthadh Full Name (ഉസ്താദിന്റെ പേര്) *
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. Usthadh Mohammed Faizy"
+                    value={newUsthadhName}
+                    onChangeText={setNewUsthadhName}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Login ID / Email (ലോഗിൻ ഐഡി) *
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. faizy@mahallu.app or usthadh.ahmed"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    value={newUsthadhEmail}
+                    onChangeText={setNewUsthadhEmail}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Login Password (പാസ്‌വേഡ്) *
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. Usthadh@123456"
+                    autoCapitalize="none"
+                    secureTextEntry
+                    value={newUsthadhPassword}
+                    onChangeText={setNewUsthadhPassword}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Phone Number (ഫോൺ നമ്പർ)
+                  </Text>
+                  <TextInput
+                    placeholder="+91 9876543210"
+                    keyboardType="phone-pad"
+                    value={newUsthadhPhone}
+                    onChangeText={setNewUsthadhPhone}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    Sanad / Qualification (യോഗ്യത)
+                  </Text>
+                  <TextInput
+                    placeholder="e.g. Faizy, Alim, Hafiz, Baqavi"
+                    value={newUsthadhQualification}
+                    onChangeText={setNewUsthadhQualification}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, fontSize: 14, color: '#0f172a' }}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  onPress={handleCreateNewUsthadh}
+                  disabled={actionLoading}
+                  style={{
+                    backgroundColor: TEAL,
+                    padding: 15,
+                    borderRadius: 14,
+                    alignItems: 'center',
+                    marginTop: 14,
+                  }}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>
+                      Create & Select Usthadh (ഉസ്താദിനെ ചേർക്കുക)
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* MODAL: ADD STUDENTS FROM FAMILY / EXISTING */}
+      {/* ========================================================================= */}
+      <Modal visible={showAddStudentsModal} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28, height: '85%', padding: 20 }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottomWidth: 1, borderColor: '#f1ebd9' }}>
+              <Text style={{ fontSize: 17, fontWeight: '900', color: TEAL_DARK }}>
+                Enrol Students to {selectedClass?.name}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAddStudentsModal(false);
+                  setSelectedFamilyForClass(null);
+                  setSelectedFamilyMemberIds([]);
+                  setSelectedExistingStudentIds([]);
+                }}
+              >
+                <Ionicons name="close" size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Sub-tab Switcher */}
+            <View style={{ flexDirection: 'row', gap: 8, marginVertical: 12 }}>
+              <TouchableOpacity
+                onPress={() => setAddStudentsTab('family')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  backgroundColor: addStudentsTab === 'family' ? TEAL : '#f1f5f9',
+                }}
+              >
+                <Text style={{ color: addStudentsTab === 'family' ? 'white' : '#64748b', fontWeight: '800', fontSize: 12 }}>
+                  From Family (കുടുംബം)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setAddStudentsTab('existing')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  backgroundColor: addStudentsTab === 'existing' ? TEAL : '#f1f5f9',
+                }}
+              >
+                <Text style={{ color: addStudentsTab === 'existing' ? 'white' : '#64748b', fontWeight: '800', fontSize: 12 }}>
+                  Existing Students
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* TAB: FROM FAMILY */}
+            {addStudentsTab === 'family' && (
+              <ScrollView contentContainerStyle={{ gap: 14 }}>
+                {/* Family Search */}
+                <View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK, marginBottom: 4 }}>
+                    1. Search & Select Family *
+                  </Text>
+                  <TextInput
+                    placeholder="Search by Code, Head Name, House..."
+                    value={familySearchQuery}
+                    onChangeText={setFamilySearchQuery}
+                    style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 10, fontSize: 13, color: '#0f172a' }}
+                  />
+
+                  {/* Family Quick List */}
+                  <View style={{ maxHeight: 130, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, marginTop: 6, backgroundColor: '#f8fafc' }}>
+                    <ScrollView nestedScrollEnabled>
+                      {filteredFamilies.slice(0, 10).map((f) => {
+                        const isChosen = selectedFamilyForClass?._id === f._id;
+                        return (
+                          <TouchableOpacity
+                            key={f._id}
+                            onPress={() => {
+                              setSelectedFamilyForClass(f);
+                              setSelectedFamilyMemberIds([]);
+                            }}
+                            style={{
+                              padding: 10,
+                              borderBottomWidth: 1,
+                              borderColor: '#e2e8f0',
+                              backgroundColor: isChosen ? '#dcfce7' : 'transparent',
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, fontWeight: '800', color: '#0f172a' }}>
+                              {f.familyCode} - {f.headMemberId?.name || f.headName || 'Family Head'}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                </View>
+
+                {/* Family Members Selection */}
+                {selectedFamilyForClass && (
+                  <View style={{ gap: 8 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: TEAL_DARK }}>
+                      2. Select Children ({selectedFamilyMemberIds.length} chosen)
+                    </Text>
+                    {selectedFamilyForClass.members?.map((m: any) => {
+                      const member = m.memberId || m;
+                      const memberId = member._id || m.memberId;
+                      const isSelected = selectedFamilyMemberIds.includes(memberId);
+
+                      return (
+                        <TouchableOpacity
+                          key={memberId}
+                          onPress={() => {
+                            if (isSelected) {
+                              setSelectedFamilyMemberIds((prev) => prev.filter((id) => id !== memberId));
+                            } else {
+                              setSelectedFamilyMemberIds((prev) => [...prev, memberId]);
+                            }
+                          }}
+                          style={{
+                            flexDirection: 'row',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: 12,
+                            borderRadius: 12,
+                            borderWidth: 1.5,
+                            borderColor: isSelected ? TEAL : '#e2e8f0',
+                            backgroundColor: isSelected ? '#f0fdf4' : '#f8fafc',
+                          }}
+                        >
+                          <View>
+                            <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>{member.name}</Text>
+                            <Text style={{ fontSize: 11, color: '#64748b' }}>
+                              {m.relationship || 'Child'} {member.gender ? `• ${member.gender}` : ''}
+                            </Text>
+                          </View>
+                          {isSelected && <Ionicons name="checkmark-circle" size={20} color={TEAL} />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  onPress={handleEnrolFamilyChildren}
+                  disabled={actionLoading || selectedFamilyMemberIds.length === 0}
+                  style={{
+                    backgroundColor: TEAL,
+                    padding: 14,
+                    borderRadius: 14,
+                    alignItems: 'center',
+                    marginTop: 10,
+                    opacity: selectedFamilyMemberIds.length > 0 ? 1 : 0.5,
+                  }}
+                >
+                  {actionLoading ? <ActivityIndicator color="white" /> : <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>Enrol Selected Children</Text>}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            {/* TAB: EXISTING STUDENTS */}
+            {addStudentsTab === 'existing' && (
+              <ScrollView contentContainerStyle={{ gap: 10 }}>
+                {allStudents.filter((s) => s.classId?._id !== selectedClass?._id).map((s) => {
+                  const isSelected = selectedExistingStudentIds.includes(s._id);
+                  return (
+                    <TouchableOpacity
+                      key={s._id}
+                      onPress={() => {
+                        if (isSelected) {
+                          setSelectedExistingStudentIds((prev) => prev.filter((id) => id !== s._id));
+                        } else {
+                          setSelectedExistingStudentIds((prev) => [...prev, s._id]);
+                        }
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: 12,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        borderColor: isSelected ? TEAL : '#e2e8f0',
+                        backgroundColor: isSelected ? '#f0fdf4' : '#f8fafc',
+                      }}
+                    >
+                      <View>
+                        <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>{s.memberId?.name}</Text>
+                        <Text style={{ fontSize: 11, color: '#64748b' }}>
+                          Adm: {s.admissionNo} • Current: {s.classId?.name || 'None'}
+                        </Text>
+                      </View>
+                      {isSelected && <Ionicons name="checkmark-circle" size={20} color={TEAL} />}
+                    </TouchableOpacity>
+                  );
+                })}
+
+                <TouchableOpacity
+                  onPress={handleAssignExistingStudents}
+                  disabled={actionLoading || selectedExistingStudentIds.length === 0}
+                  style={{
+                    backgroundColor: TEAL,
+                    padding: 14,
+                    borderRadius: 14,
+                    alignItems: 'center',
+                    marginTop: 10,
+                    opacity: selectedExistingStudentIds.length > 0 ? 1 : 0.5,
+                  }}
+                >
+                  {actionLoading ? <ActivityIndicator color="white" /> : <Text style={{ color: 'white', fontWeight: '900', fontSize: 14 }}>Assign to Class</Text>}
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* QUICK ENROLL FAMILY MODAL */}
+      <Modal visible={showEnrollFamilyModal} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: '80%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottomWidth: 1, borderColor: '#f1ebd9' }}>
+              <Text style={{ fontSize: 17, fontWeight: '900', color: TEAL_DARK }}>Pick Family</Text>
+              <TouchableOpacity onPress={() => setShowEnrollFamilyModal(false)}>
+                <Ionicons name="close" size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              placeholder="Search family..."
+              value={familySearchQuery}
+              onChangeText={setFamilySearchQuery}
+              style={{ backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 10, fontSize: 13, marginVertical: 10 }}
             />
+
+            <ScrollView contentContainerStyle={{ gap: 8 }}>
+              {filteredFamilies.map((fam) => (
+                <TouchableOpacity
+                  key={fam._id}
+                  onPress={() => handleSelectQuickFamily(fam)}
+                  style={{ padding: 12, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>
+                    {fam.familyCode} - {fam.headMemberId?.name || fam.headName || 'Family Head'}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{fam.address?.line1 || 'House Name'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* QUICK ENROLL CLASS MODAL */}
+      <Modal visible={showEnrollClassModal} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: '80%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottomWidth: 1, borderColor: '#f1ebd9' }}>
+              <Text style={{ fontSize: 17, fontWeight: '900', color: TEAL_DARK }}>Select Class</Text>
+              <TouchableOpacity onPress={() => setShowEnrollClassModal(false)}>
+                <Ionicons name="close" size={20} color="#64748b" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={{ paddingVertical: 10, gap: 8 }}>
+              {classes.map((cls) => (
+                <TouchableOpacity
+                  key={cls._id}
+                  onPress={() => {
+                    setEnrollClassId(cls._id);
+                    setShowEnrollClassModal(false);
+                  }}
+                  style={{ padding: 14, borderRadius: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#0f172a' }}>{cls.name}</Text>
+                  <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Level {cls.level} • Year: {cls.academicYear || '2026-2027'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>

@@ -131,7 +131,7 @@ export default function FamilyScreen() {
           className="flex-row items-center gap-1.5 shadow-sm"
         >
           <Ionicons name="create-outline" size={16} color="white" />
-          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>Edit Family</Text>
+          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>{t('editFamily', language)}</Text>
         </TouchableOpacity>
       </View>
 
@@ -196,20 +196,24 @@ export default function FamilyScreen() {
           <View className="flex-row justify-between items-center mb-2">
             <View className="flex-row items-center gap-2">
               <Ionicons name="heart-circle-outline" size={20} color={TEAL} />
-              <Text className="font-bold text-slate-800 text-sm">Recurring Donation Setup</Text>
+              <Text className="font-bold text-slate-800 text-sm">{t('recurringSetup', language)}</Text>
             </View>
             <TouchableOpacity onPress={openEditModal}>
-              <Text style={{ color: TEAL, fontWeight: '700', fontSize: 12 }}>Change</Text>
+              <Text style={{ color: TEAL, fontWeight: '700', fontSize: 12 }}>
+                {language === 'ml' ? 'മാറ്റുക' : 'Change'}
+              </Text>
             </TouchableOpacity>
           </View>
 
           <View className="flex-row items-center justify-between mt-1 bg-slate-50 p-3 rounded-xl">
             <View>
-              <Text className="text-xs text-slate-500 font-medium uppercase tracking-wider">Frequency & Amount</Text>
+              <Text className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                {language === 'ml' ? 'കാലയളവും തുകയും' : 'Frequency & Amount'}
+              </Text>
               <Text className="text-slate-900 font-extrabold text-base mt-0.5">
                 {family.recurringDonationType && family.recurringDonationType !== 'none'
                   ? `₹${family.recurringDonationAmount || 0} / ${family.recurringDonationType}`
-                  : 'No active recurring donation'}
+                  : (language === 'ml' ? 'മാസവരി നിശ്ചയിച്ചിട്ടില്ല' : 'No active recurring donation')}
               </Text>
             </View>
 

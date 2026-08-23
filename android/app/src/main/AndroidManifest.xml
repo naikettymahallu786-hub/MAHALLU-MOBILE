@@ -11,6 +11,12 @@
   <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+  <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+  <uses-permission android:name="android.permission.WAKE_LOCK"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
@@ -38,5 +44,28 @@
         <data android:scheme="mahallu"/>
       </intent-filter>
     </activity>
+    <receiver
+      android:name="expo.modules.notifications.service.ScheduledNotificationReceiver"
+      android:exported="false" />
+    <receiver
+      android:name="expo.modules.notifications.service.ScheduledNotificationBootReceiver"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+        <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+      </intent-filter>
+    </receiver>
+
+    <!-- Custom Native Adhan Full Audio Service & Receiver -->
+    <service
+      android:name=".AdhanService"
+      android:enabled="true"
+      android:exported="false"
+      android:foregroundServiceType="mediaPlayback" />
+    <receiver
+      android:name=".AdhanAlarmReceiver"
+      android:enabled="true"
+      android:exported="false" />
   </application>
 </manifest>
