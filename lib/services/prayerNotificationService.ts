@@ -36,67 +36,85 @@ const PRAYER_NAMES_ML: Record<string, string> = {
 export async function initializeNotificationChannels() {
   try {
     // 1. Set global notification behavior (foreground & background)
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
-    });
+    try {
+      if (Notifications?.setNotificationHandler) {
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+            shouldShowBanner: true,
+            shouldShowList: true,
+          }),
+        });
+      }
+    } catch (e) {
+      // Ignored
+    }
 
     // 2. Request permissions if not yet granted
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync({
-        ios: {
-          allowAlert: true,
-          allowBadge: true,
-          allowSound: true,
-        },
-      });
-      finalStatus = status;
+    let finalStatus = 'undetermined';
+    try {
+      if (Notifications?.getPermissionsAsync) {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        finalStatus = existingStatus;
+        if (existingStatus !== 'granted' && Notifications.requestPermissionsAsync) {
+          const { status } = await Notifications.requestPermissionsAsync({
+            ios: {
+              allowAlert: true,
+              allowBadge: true,
+              allowSound: true,
+            },
+          });
+          finalStatus = status;
+        }
+      }
+    } catch (e) {
+      // Ignored in Expo Go
     }
 
     // 3. Android High-Priority Channels
     if (Platform.OS === 'android') {
-      // Adhan / Voice channel with MAX importance, ALARM audio attributes, and raw sound
-      await Notifications.setNotificationChannelAsync('prayer-voice', {
-        name: 'Adhan & Prayer Voice',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 500, 250, 500],
-        lightColor: '#059669',
-        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-        bypassDnd: true,
-        sound: 'adhan.mp3',
-        audioAttributes: {
-          usage: Notifications.AndroidAudioUsage.ALARM,
-          contentType: Notifications.AndroidAudioContentType.SONIFICATION,
-        },
-      });
+      try {
+        if (Notifications?.setNotificationChannelAsync) {
+          // Adhan / Voice channel with MAX importance, ALARM audio attributes, and raw sound
+          await Notifications.setNotificationChannelAsync('prayer-voice', {
+            name: 'Adhan & Prayer Voice',
+            importance: Notifications.AndroidImportance?.MAX || 5,
+            vibrationPattern: [0, 500, 250, 500],
+            lightColor: '#059669',
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility?.PUBLIC || 1,
+            bypassDnd: true,
+            sound: 'adhan.mp3',
+            audioAttributes: {
+              usage: Notifications.AndroidAudioUsage?.ALARM || 4,
+              contentType: Notifications.AndroidAudioContentType?.SONIFICATION || 4,
+            },
+          });
 
-      // Silent / gentle notification channel
-      await Notifications.setNotificationChannelAsync('prayer-silent', {
-        name: 'Silent Prayer Reminders',
-        importance: Notifications.AndroidImportance.DEFAULT,
-        vibrationPattern: [0, 250],
-        lightColor: '#C9972E',
-        sound: null,
-      });
+          // Silent / gentle notification channel
+          await Notifications.setNotificationChannelAsync('prayer-silent', {
+            name: 'Silent Prayer Reminders',
+            importance: Notifications.AndroidImportance?.DEFAULT || 3,
+            vibrationPattern: [0, 250],
+            lightColor: '#C9972E',
+            sound: null,
+          });
 
-      // Notices & announcements channel
-      await Notifications.setNotificationChannelAsync('mahallu-notices', {
-        name: 'Mahallu Notices & Events',
-        importance: Notifications.AndroidImportance.HIGH,
-        sound: 'default',
-      });
+          // Notices & announcements channel
+          await Notifications.setNotificationChannelAsync('mahallu-notices', {
+            name: 'Mahallu Notices & Events',
+            importance: Notifications.AndroidImportance?.HIGH || 4,
+            sound: 'default',
+          });
+        }
+      } catch (e) {
+        // Ignored
+      }
     }
 
     return finalStatus === 'granted';
   } catch (err) {
-    console.warn('[Notifications] Channel initialization warning:', err);
     return false;
   }
 }

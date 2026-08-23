@@ -96,23 +96,36 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
     });
 
     // Listen for incoming notifications when app is active/foreground
-    const sub = Notifications.addNotificationReceivedListener((notification) => {
-      const notifData = notification.request.content.data;
-      if (notifData?.type === 'prayer-adhan' && notifData?.mode === 'voice') {
-        playAdhanAudio();
-      }
-    });
+    let sub: any = null;
+    let responseSub: any = null;
 
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const notifData = response.notification.request.content.data;
-      if (notifData?.type === 'prayer-adhan') {
-        playAdhanAudio();
+    try {
+      if (Notifications?.addNotificationReceivedListener) {
+        sub = Notifications.addNotificationReceivedListener((notification) => {
+          const notifData = notification?.request?.content?.data;
+          if (notifData?.type === 'prayer-adhan' && notifData?.mode === 'voice') {
+            playAdhanAudio();
+          }
+        });
       }
-    });
+
+      if (Notifications?.addNotificationResponseReceivedListener) {
+        responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+          const notifData = response?.notification?.request?.content?.data;
+          if (notifData?.type === 'prayer-adhan') {
+            playAdhanAudio();
+          }
+        });
+      }
+    } catch (e) {
+      // Graceful fallback in Expo Go
+    }
 
     return () => {
-      sub.remove();
-      responseSub.remove();
+      try {
+        if (sub && typeof sub.remove === 'function') sub.remove();
+        if (responseSub && typeof responseSub.remove === 'function') responseSub.remove();
+      } catch (e) {}
       if (soundRef.current) {
         soundRef.current.unloadAsync().catch(() => {});
       }
@@ -122,7 +135,7 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
   // Schedule native background notifications whenever prayer data or reminders change
   useEffect(() => {
     if (data?.timings) {
-      schedulePrayerNotifications(data.timings, data.iqamahTimes, reminders, language);
+      schedulePrayerNotifications(data.timings, data.iqamahTimes, reminders, language).catch(() => {});
     }
   }, [data, reminders, language]);
 
