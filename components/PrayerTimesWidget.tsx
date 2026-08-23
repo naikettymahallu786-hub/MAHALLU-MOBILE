@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ActivityIndicator, TouchableOpacity, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import dayjs from 'dayjs';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
@@ -73,6 +74,7 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
     type: 'Bang' | 'Namaz';
   } | null>(null);
 
+  const router = useRouter();
   const [reminders, setReminders] = useState<PrayerRemindersState>(DEFAULT_REMINDERS);
   const [isPlayingAdhan, setIsPlayingAdhan] = useState(false);
   const audioRef = useRef<any>(null);
@@ -606,6 +608,28 @@ export function PrayerTimesWidget({ data, isLoading = false }: PrayerTimesProps)
           </View>
         </View>
       </View>
+
+      {/* About Mosque Details Link */}
+      <TouchableOpacity
+        onPress={() => router.push('/(member)/mosque')}
+        activeOpacity={0.8}
+        className="mt-3.5 py-2.5 px-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex-row items-center justify-between"
+      >
+        <View className="flex-row items-center">
+          <View className="w-6 h-6 rounded-lg bg-emerald-600 items-center justify-center mr-2">
+            <Ionicons name="business" size={13} color="#ffffff" />
+          </View>
+          <Text className="text-emerald-950 font-extrabold text-xs">
+            {isMl ? 'പള്ളി വിവരങ്ങൾ & ഭാരവാഹികൾ' : 'About Mosque, Imam & Committee'}
+          </Text>
+        </View>
+        <View className="flex-row items-center">
+          <Text className="text-emerald-700 font-bold text-[11px] mr-1">
+            {isMl ? 'കാണുക' : 'View'}
+          </Text>
+          <Ionicons name="chevron-forward" size={14} color="#047857" />
+        </View>
+      </TouchableOpacity>
     </View>
   );
 }

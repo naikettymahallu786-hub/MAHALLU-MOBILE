@@ -56,6 +56,18 @@ export default function ServicesScreen() {
       tag: 'CHARITY',
     },
     {
+      id: 'mosque',
+      category: 'community',
+      categoryTitle: t('community', language),
+      title: language === 'en' ? 'About Mosque' : 'പള്ളി വിവരങ്ങൾ',
+      desc: language === 'en' ? 'Imam, Muazzin, Address, Facilities & Committee' : 'ഇമാം, മുഅദ്ദിൻ, ഭാരവാഹികൾ, വിലാസം',
+      route: '/(member)/mosque',
+      icon: 'business' as const,
+      color: '#059669',
+      bg: '#ECFDF5',
+      tag: 'MASJID',
+    },
+    {
       id: 'events',
       category: 'community',
       categoryTitle: t('community', language),
